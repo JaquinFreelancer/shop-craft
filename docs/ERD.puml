@@ -1,0 +1,479 @@
+@startuml ERD_Ecommerce_System
+
+!define ENTITY class
+!define PRIMARY_KEY <u>
+!define FOREIGN_KEY <i>
+
+' ===== COMENTARIO DESCRIPTIVO =====
+' Sistema E-commerce para Pequeños Comercios
+' Base de datos normalizada (3NF) diseñada para:
+' - Gestión completa de productos y categorías
+' - Carrito de compras persistente y de sesión
+' - Procesamiento de órdenes y pagos
+' - Sistema de usuarios con roles y permisos
+' - Gestión de direcciones múltiples
+' - Sistema de cupones y descuentos
+' - Reviews y wishlists
+' - Configuración de envíos
+' - Auditoría completa del sistema
+
+' ===== ENTIDADES DE USUARIOS Y AUTENTICACIÓN =====
+
+ENTITY users {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Información básica del usuario
+  email : VARCHAR(255) UNIQUE NOT NULL
+  password_hash : VARCHAR(255) NOT NULL
+  first_name : VARCHAR(100) NOT NULL
+  last_name : VARCHAR(100) NOT NULL
+  phone : VARCHAR(20)
+  date_of_birth : DATE
+  gender : ENUM('male', 'female', 'other')
+  ' Estados y control
+  email_verified : BOOLEAN DEFAULT FALSE
+  is_active : BOOLEAN DEFAULT TRUE
+  ' Timestamps de auditoría
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+  last_login_at : TIMESTAMP
+}
+
+ENTITY roles {
+  PRIMARY_KEY id : INT
+  --
+  ' Definición de roles del sistema
+  name : VARCHAR(50) UNIQUE NOT NULL    ' admin, customer, manager
+  description : TEXT
+  permissions : JSON                    ' Permisos granulares en formato JSON
+  created_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY user_roles {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Tabla de relación many-to-many entre usuarios y roles
+  FOREIGN_KEY user_id : BIGINT NOT NULL
+  FOREIGN_KEY role_id : INT NOT NULL
+  assigned_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY addresses {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY user_id : BIGINT NOT NULL
+  ' Tipo de dirección: billing (facturación) o shipping (envío)
+  type : ENUM('billing', 'shipping') NOT NULL
+  ' Información completa de la dirección
+  first_name : VARCHAR(100) NOT NULL
+  last_name : VARCHAR(100) NOT NULL
+  company : VARCHAR(200)               ' Opcional para empresas
+  address_line_1 : VARCHAR(255) NOT NULL
+  address_line_2 : VARCHAR(255)       ' Apartamento, suite, etc.
+  city : VARCHAR(100) NOT NULL
+  state : VARCHAR(100) NOT NULL
+  postal_code : VARCHAR(20) NOT NULL
+  country : VARCHAR(100) NOT NULL
+  phone : VARCHAR(20)
+  is_default : BOOLEAN DEFAULT FALSE  ' Dirección por defecto del usuario
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== ENTIDADES DE PRODUCTOS Y CATÁLOGO =====
+
+ENTITY categories {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Información básica de la categoría
+  name : VARCHAR(200) NOT NULL
+  slug : VARCHAR(255) UNIQUE NOT NULL  ' URL-friendly: "electronics-phones"
+  description : TEXT
+  ' Jerarquía de categorías (permite subcategorías)
+  FOREIGN_KEY parent_id : BIGINT       ' NULL para categorías raíz
+  image_url : VARCHAR(500)             ' Imagen representativa
+  ' SEO y optimización
+  meta_title : VARCHAR(255)            ' Título para motores de búsqueda
+  meta_description : TEXT              ' Descripción para SEO
+  sort_order : INT DEFAULT 0           ' Orden de visualización
+  is_active : BOOLEAN DEFAULT TRUE     ' Activar/desactivar categoría
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY products {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Información básica del producto
+  name : VARCHAR(255) NOT NULL
+  slug : VARCHAR(255) UNIQUE NOT NULL  ' URL amigable del producto
+  description : TEXT                   ' Descripción completa HTML
+  short_description : TEXT             ' Descripción breve para listados
+  sku : VARCHAR(100) UNIQUE NOT NULL   ' Stock Keeping Unit - código único
+  FOREIGN_KEY category_id : BIGINT NOT NULL
+  ' Precios (todos en la moneda base del sistema)
+  price : DECIMAL(10,2) NOT NULL       ' Precio de venta actual
+  compare_price : DECIMAL(10,2)        ' Precio original (para mostrar descuentos)
+  cost_price : DECIMAL(10,2)           ' Precio de costo (solo admin)
+  ' Gestión de inventario
+  track_quantity : BOOLEAN DEFAULT TRUE ' Si se debe trackear el stock
+  quantity : INT DEFAULT 0             ' Stock disponible
+  low_stock_threshold : INT DEFAULT 5  ' Alerta de stock bajo
+  ' Propiedades físicas
+  weight : DECIMAL(8,2)                ' Peso en gramos
+  dimensions : JSON                    ' {length, width, height} en cm
+  ' Configuración de envío y impuestos
+  requires_shipping : BOOLEAN DEFAULT TRUE
+  taxable : BOOLEAN DEFAULT TRUE
+  tax_rate : DECIMAL(5,2) DEFAULT 0.00 ' Porcentaje de impuestos
+  ' Estados y configuración
+  status : ENUM('draft', 'active', 'archived') DEFAULT 'draft'
+  featured : BOOLEAN DEFAULT FALSE     ' Producto destacado
+  ' SEO
+  meta_title : VARCHAR(255)
+  meta_description : TEXT
+  tags : JSON                         ' Array de tags para búsqueda
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY product_images {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY product_id : BIGINT NOT NULL
+  ' Gestión de imágenes del producto
+  image_url : VARCHAR(500) NOT NULL    ' URL de la imagen
+  alt_text : VARCHAR(255)              ' Texto alternativo para SEO
+  sort_order : INT DEFAULT 0           ' Orden de visualización
+  is_primary : BOOLEAN DEFAULT FALSE   ' Imagen principal del producto
+  created_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY product_variants {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY product_id : BIGINT NOT NULL
+  ' Variantes del producto (talla, color, etc.)
+  variant_name : VARCHAR(100) NOT NULL ' "Talla L - Color Rojo"
+  sku : VARCHAR(100) UNIQUE NOT NULL   ' SKU único para la variante
+  ' Precios específicos de la variante (pueden diferir del producto base)
+  price : DECIMAL(10,2)                ' Si NULL, usa precio del producto
+  compare_price : DECIMAL(10,2)
+  cost_price : DECIMAL(10,2)
+  ' Stock específico de la variante
+  quantity : INT DEFAULT 0
+  weight : DECIMAL(8,2)                ' Peso específico de la variante
+  image_url : VARCHAR(500)             ' Imagen específica de la variante
+  variant_options : JSON               ' {size: "L", color: "Red"}
+  is_active : BOOLEAN DEFAULT TRUE
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== ENTIDADES DE CARRITO DE COMPRAS =====
+
+ENTITY carts {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Identificación del carrito
+  FOREIGN_KEY user_id : BIGINT         ' NULL para carritos de invitados
+  session_id : VARCHAR(255)            ' ID de sesión para invitados
+  ' Estados del carrito
+  status : ENUM('active', 'abandoned', 'converted') DEFAULT 'active'
+  ' Totales del carrito (calculados y cacheados)
+  total_items : INT DEFAULT 0          ' Cantidad total de productos
+  total_amount : DECIMAL(10,2) DEFAULT 0.00 ' Total en dinero
+  ' Control de expiración
+  expires_at : TIMESTAMP               ' Cuándo expira el carrito
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY cart_items {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY cart_id : BIGINT NOT NULL
+  FOREIGN_KEY product_id : BIGINT NOT NULL
+  FOREIGN_KEY product_variant_id : BIGINT ' NULL si no tiene variantes
+  ' Información del item en el carrito
+  quantity : INT NOT NULL              ' Cantidad seleccionada
+  unit_price : DECIMAL(10,2) NOT NULL  ' Precio unitario al agregar
+  total_price : DECIMAL(10,2) NOT NULL ' quantity * unit_price
+  added_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== ENTIDADES DE ÓRDENES Y PAGOS =====
+
+ENTITY orders {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Identificación de la orden
+  order_number : VARCHAR(50) UNIQUE NOT NULL ' "ORD-2024-001234"
+  FOREIGN_KEY user_id : BIGINT         ' NULL para órdenes de invitados
+  email : VARCHAR(255) NOT NULL        ' Email del comprador
+  ' Estados de la orden
+  status : ENUM('pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded') DEFAULT 'pending'
+  payment_status : ENUM('pending', 'paid', 'failed', 'refunded', 'partially_refunded') DEFAULT 'pending'
+  fulfillment_status : ENUM('unfulfilled', 'partially_fulfilled', 'fulfilled') DEFAULT 'unfulfilled'
+  ' Cálculos financieros
+  subtotal : DECIMAL(10,2) NOT NULL      ' Suma de productos
+  tax_amount : DECIMAL(10,2) DEFAULT 0.00 ' Impuestos aplicados
+  shipping_amount : DECIMAL(10,2) DEFAULT 0.00 ' Costo de envío
+  discount_amount : DECIMAL(10,2) DEFAULT 0.00 ' Descuentos aplicados
+  total_amount : DECIMAL(10,2) NOT NULL  ' Monto final a pagar
+  currency : VARCHAR(3) DEFAULT 'USD'    ' Moneda de la transacción
+  ' Direcciones (almacenadas como JSON para preservar datos históricos)
+  billing_address : JSON NOT NULL       ' Dirección de facturación
+  shipping_address : JSON               ' Dirección de envío
+  ' Información de envío
+  shipping_method : VARCHAR(100)        ' Método de envío seleccionado
+  tracking_number : VARCHAR(255)        ' Número de seguimiento
+  notes : TEXT                          ' Notas adicionales del cliente/admin
+  ' Timestamps importantes
+  processed_at : TIMESTAMP              ' Cuándo se procesó la orden
+  shipped_at : TIMESTAMP                ' Cuándo se envió
+  delivered_at : TIMESTAMP              ' Cuándo se entregó
+  cancelled_at : TIMESTAMP              ' Cuándo se canceló
+  cancellation_reason : TEXT            ' Razón de cancelación
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY order_items {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY order_id : BIGINT NOT NULL
+  FOREIGN_KEY product_id : BIGINT NOT NULL
+  FOREIGN_KEY product_variant_id : BIGINT
+  ' Información del producto al momento de la compra
+  product_name : VARCHAR(255) NOT NULL  ' Nombre preservado histórico
+  product_sku : VARCHAR(100) NOT NULL   ' SKU preservado histórico
+  variant_details : JSON                ' Detalles de variante preservados
+  ' Cantidades y precios
+  quantity : INT NOT NULL
+  unit_price : DECIMAL(10,2) NOT NULL   ' Precio al momento de la compra
+  total_price : DECIMAL(10,2) NOT NULL  ' quantity * unit_price
+  created_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY payments {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY order_id : BIGINT NOT NULL
+  ' Información del método de pago
+  payment_method : ENUM('credit_card', 'paypal', 'stripe', 'bank_transfer') NOT NULL
+  payment_provider : VARCHAR(50) NOT NULL ' "stripe", "paypal", etc.
+  ' IDs de transacción
+  transaction_id : VARCHAR(255) UNIQUE    ' ID interno del sistema
+  gateway_transaction_id : VARCHAR(255)   ' ID del proveedor de pago
+  ' Información financiera
+  amount : DECIMAL(10,2) NOT NULL
+  currency : VARCHAR(3) DEFAULT 'USD'
+  ' Estado y respuesta del gateway
+  status : ENUM('pending', 'processing', 'completed', 'failed', 'cancelled', 'refunded') DEFAULT 'pending'
+  gateway_response : JSON                 ' Respuesta completa del gateway
+  processed_at : TIMESTAMP               ' Cuándo se procesó el pago
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== ENTIDADES DE MARKETING Y PROMOCIONES =====
+
+ENTITY coupons {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Información básica del cupón
+  code : VARCHAR(50) UNIQUE NOT NULL    ' "SAVE20", "WELCOME10"
+  name : VARCHAR(200) NOT NULL          ' Nombre descriptivo
+  description : TEXT                    ' Descripción del cupón
+  ' Configuración del descuento
+  type : ENUM('percentage', 'fixed_amount') NOT NULL
+  value : DECIMAL(10,2) NOT NULL        ' 20 (para 20%) o 10.00 (para $10)
+  minimum_amount : DECIMAL(10,2)        ' Monto mínimo de compra
+  maximum_discount : DECIMAL(10,2)      ' Descuento máximo (para porcentuales)
+  ' Límites de uso
+  usage_limit : INT                     ' Límite total de usos
+  usage_count : INT DEFAULT 0           ' Cuántas veces se ha usado
+  user_usage_limit : INT DEFAULT 1      ' Límite por usuario
+  ' Vigencia
+  starts_at : TIMESTAMP                 ' Cuándo inicia la validez
+  expires_at : TIMESTAMP                ' Cuándo expira
+  is_active : BOOLEAN DEFAULT TRUE
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY coupon_usages {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Registro de uso de cupones
+  FOREIGN_KEY coupon_id : BIGINT NOT NULL
+  FOREIGN_KEY order_id : BIGINT NOT NULL
+  FOREIGN_KEY user_id : BIGINT          ' NULL para invitados
+  discount_amount : DECIMAL(10,2) NOT NULL ' Descuento aplicado
+  used_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== ENTIDADES DE ENGAGEMENT Y SOCIAL =====
+
+ENTITY reviews {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY product_id : BIGINT NOT NULL
+  FOREIGN_KEY user_id : BIGINT NOT NULL
+  FOREIGN_KEY order_id : BIGINT         ' Para verificar compra
+  ' Contenido de la reseña
+  rating : INT CHECK (rating >= 1 AND rating <= 5) NOT NULL
+  title : VARCHAR(255)                  ' Título de la reseña
+  review_text : TEXT                    ' Contenido de la reseña
+  ' Estados y moderación
+  is_verified_purchase : BOOLEAN DEFAULT FALSE ' Si compró el producto
+  is_approved : BOOLEAN DEFAULT FALSE   ' Moderación de contenido
+  helpful_votes : INT DEFAULT 0         ' Votos de "útil"
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY wishlists {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY user_id : BIGINT NOT NULL
+  ' Configuración de la wishlist
+  name : VARCHAR(200) DEFAULT 'My Wishlist'
+  is_public : BOOLEAN DEFAULT FALSE     ' Si otros pueden verla
+  created_at : TIMESTAMP DEFAULT NOW()
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY wishlist_items {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY wishlist_id : BIGINT NOT NULL
+  FOREIGN_KEY product_id : BIGINT NOT NULL
+  FOREIGN_KEY product_variant_id : BIGINT ' Variante específica deseada
+  added_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== ENTIDADES DE MARKETING Y COMUNICACIÓN =====
+
+ENTITY newsletters {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Suscripciones al newsletter
+  email : VARCHAR(255) UNIQUE NOT NULL
+  first_name : VARCHAR(100)
+  last_name : VARCHAR(100)
+  status : ENUM('subscribed', 'unsubscribed') DEFAULT 'subscribed'
+  subscribed_at : TIMESTAMP DEFAULT NOW()
+  unsubscribed_at : TIMESTAMP
+}
+
+' ===== ENTIDADES DE CONFIGURACIÓN Y ENVÍOS =====
+
+ENTITY shipping_zones {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Zonas de envío geográficas
+  name : VARCHAR(200) NOT NULL          ' "Domestic", "International"
+  countries : JSON NOT NULL             ' Array de códigos de país
+  is_active : BOOLEAN DEFAULT TRUE
+  created_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY shipping_rates {
+  PRIMARY_KEY id : BIGINT
+  --
+  FOREIGN_KEY shipping_zone_id : BIGINT NOT NULL
+  ' Configuración de tarifa de envío
+  name : VARCHAR(200) NOT NULL          ' "Standard Shipping"
+  description : TEXT                    ' Descripción del servicio
+  rate_type : ENUM('flat_rate', 'weight_based', 'price_based') NOT NULL
+  price : DECIMAL(10,2) NOT NULL        ' Precio base del envío
+  ' Condiciones para aplicar la tarifa
+  min_weight : DECIMAL(8,2)             ' Peso mínimo (gramos)
+  max_weight : DECIMAL(8,2)             ' Peso máximo (gramos)
+  min_price : DECIMAL(10,2)             ' Monto mínimo de compra
+  max_price : DECIMAL(10,2)             ' Monto máximo de compra
+  estimated_delivery_days : INT         ' Días estimados de entrega
+  is_active : BOOLEAN DEFAULT TRUE
+  created_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== ENTIDADES DE CONFIGURACIÓN Y AUDITORÍA =====
+
+ENTITY settings {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Configuraciones del sistema
+  setting_key : VARCHAR(100) UNIQUE NOT NULL ' "store_name", "currency"
+  setting_value : TEXT                       ' Valor de la configuración
+  setting_type : ENUM('string', 'number', 'boolean', 'json') DEFAULT 'string'
+  description : TEXT                         ' Descripción de la configuración
+  is_public : BOOLEAN DEFAULT FALSE          ' Si se puede ver en frontend
+  updated_at : TIMESTAMP DEFAULT NOW()
+}
+
+ENTITY audit_logs {
+  PRIMARY_KEY id : BIGINT
+  --
+  ' Registro de auditoría para compliance y debugging
+  FOREIGN_KEY user_id : BIGINT          ' Usuario que realizó la acción
+  action : VARCHAR(100) NOT NULL        ' CREATE, UPDATE, DELETE, etc.
+  entity_type : VARCHAR(50) NOT NULL    ' products, orders, users, etc.
+  entity_id : BIGINT                    ' ID del objeto afectado
+  old_values : JSON                     ' Valores anteriores (UPDATE/DELETE)
+  new_values : JSON                     ' Valores nuevos (CREATE/UPDATE)
+  ip_address : VARCHAR(45)              ' IP del usuario
+  user_agent : TEXT                     ' Navegador/dispositivo
+  created_at : TIMESTAMP DEFAULT NOW()
+}
+
+' ===== RELACIONES CON COMENTARIOS =====
+
+' Relaciones de usuarios y autenticación
+users ||--o{ user_roles : "un usuario puede tener múltiples roles"
+roles ||--o{ user_roles : "un rol puede ser asignado a múltiples usuarios"
+users ||--o{ addresses : "un usuario puede tener múltiples direcciones"
+
+' Relaciones de catálogo de productos
+categories ||--o{ categories : "categorías pueden tener subcategorías"
+categories ||--o{ products : "una categoría contiene múltiples productos"
+products ||--o{ product_images : "un producto puede tener múltiples imágenes"
+products ||--o{ product_variants : "un producto puede tener múltiples variantes"
+
+' Relaciones de carrito de compras
+users ||--o{ carts : "un usuario puede tener múltiples carritos (histórico)"
+carts ||--o{ cart_items : "un carrito contiene múltiples items"
+products ||--o{ cart_items : "un producto puede estar en múltiples carritos"
+product_variants ||--o{ cart_items : "una variante puede estar en múltiples carritos"
+
+' Relaciones de órdenes y pagos
+users ||--o{ orders : "un usuario puede realizar múltiples órdenes"
+orders ||--o{ order_items : "una orden contiene múltiples productos"
+orders ||--o{ payments : "una orden puede tener múltiples intentos de pago"
+products ||--o{ order_items : "un producto puede estar en múltiples órdenes"
+product_variants ||--o{ order_items : "una variante puede estar en múltiples órdenes"
+
+' Relaciones de cupones y descuentos
+coupons ||--o{ coupon_usages : "un cupón puede tener múltiples usos"
+orders ||--o{ coupon_usages : "una orden puede usar múltiples cupones"
+users ||--o{ coupon_usages : "un usuario puede usar múltiples cupones"
+
+' Relaciones sociales y engagement
+products ||--o{ reviews : "un producto puede tener múltiples reseñas"
+users ||--o{ reviews : "un usuario puede escribir múltiples reseñas"
+orders ||--|| reviews : "una reseña puede estar vinculada a una orden específica"
+
+users ||--o{ wishlists : "un usuario puede tener múltiples wishlists"
+wishlists ||--o{ wishlist_items : "una wishlist contiene múltiples productos"
+products ||--o{ wishlist_items : "un producto puede estar en múltiples wishlists"
+product_variants ||--o{ wishlist_items : "una variante puede estar en múltiples wishlists"
+
+' Relaciones de envío
+shipping_zones ||--o{ shipping_rates : "una zona de envío tiene múltiples tarifas"
+
+' Relaciones de auditoría
+users ||--o{ audit_logs : "un usuario genera múltiples logs de auditoría"
+
+@enduml

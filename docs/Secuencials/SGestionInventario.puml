@@ -1,0 +1,139 @@
+@startuml Sequence_Inventory_Management
+
+participant "Order Service" as OrderSvc
+participant "Inventory Service" as InventorySvc
+participant "Product Service" as ProductSvc
+participant "Notification Service" as NotifSvc
+participant "Admin Dashboard" as AdminUI
+participant "Database" as DB
+participant "Cache" as Redis
+participant "Analytics Service" as AnalyticsSvc
+actor "Administrador" as Admin
+
+title Gestión Automática de Inventario
+
+== Venta de Producto (Reducción de Stock) ==
+
+OrderSvc -> InventorySvc: Orden confirmada - reducir stock
+InventorySvc -> DB: BEGIN transaction
+
+InventorySvc -> DB: UPDATE products SET stock = stock - quantity WHERE id = ?
+InventorySvc -> DB: INSERT INTO stock_movements (product_id, type, quantity, reason, order_id)
+
+InventorySvc -> InventorySvc: Verificar nivel de stock post-venta
+InventorySvc -> DB: SELECT stock, low_stock_threshold FROM products WHERE id = ?
+DB -> InventorySvc: Stock actual + umbral
+
+alt Stock bajo detectado
+    InventorySvc -> DB: UPDATE products SET status = 'low_stock' WHERE id = ?
+    InventorySvc -> NotifSvc: Enviar alerta de stock bajo
+    NotifSvc -> AdminUI: Push notification
+    AdminUI -> Admin: 🔴 Alerta: Stock bajo en {producto}
+    
+    InventorySvc -> AnalyticsSvc: Log low stock event
+    AnalyticsSvc -> AnalyticsSvc: Actualizar métricas de inventario
+    
+alt Stock agotado
+    InventorySvc -> DB: UPDATE products SET status = 'out_of_stock' WHERE id = ?
+    InventorySvc -> ProductSvc: Ocultar producto del catálogo público
+    ProductSvc -> Redis: Invalidate product cache
+    ProductSvc -> SearchSvc: Remove from search index
+    
+    InventorySvc -> NotifSvc: Activar "Notify when available"
+    NotifSvc -> DB: SELECT users FROM wishlist_items WHERE product_id = ?
+    DB -> NotifSvc: Lista de usuarios interesados
+    NotifSvc -> NotifSvc: Queue "out of stock" notifications
+end
+
+InventorySvc -> DB: COMMIT transaction
+InventorySvc -> OrderSvc: Stock actualizado exitosamente
+
+== Reposición de Inventario ==
+
+Admin -> AdminUI: Actualizar stock de producto
+AdminUI -> Gateway: PUT /admin/inventory/{productId}/restock
+Gateway -> InventorySvc: Reponer stock
+
+InventorySvc -> DB: BEGIN transaction
+InventorySvc -> DB: UPDATE products SET stock = stock + quantity
+InventorySvc -> DB: INSERT INTO stock_movements (product_id, type='restock', quantity, reason='manual_restock')
+
+InventorySvc -> InventorySvc: Verificar si producto vuelve a estar disponible
+InventorySvc -> DB: SELECT stock, status FROM products WHERE id = ?
+DB -> InventorySvc: Nuevo stock + status
+
+alt Producto vuelve a estar disponible
+    InventorySvc -> DB: UPDATE products SET status = 'active'
+    InventorySvc -> ProductSvc: Restaurar en catálogo
+    ProductSvc -> Redis: Update product cache
+    ProductSvc -> SearchSvc: Re-index product
+    
+    InventorySvc -> NotifSvc: Notificar disponibilidad
+    NotifSvc -> DB: SELECT email FROM notify_when_available WHERE product_id = ?
+    DB -> NotifSvc: Lista de emails pendientes
+    
+    loop Para cada usuario en lista de espera
+        NotifSvc -> EmailSvc: Send "back in stock" email
+        EmailSvc -> Customer: 📧 "{Producto} está disponible nuevamente!"
+    end
+    
+    NotifSvc -> DB: DELETE FROM notify_when_available WHERE product_id = ?
+end
+
+InventorySvc -> DB: COMMIT transaction
+InventorySvc -> AdminUI: Stock actualizado
+AdminUI -> Admin: ✅ Inventario actualizado exitosamente
+
+== Monitoreo Automático de Stock ==
+
+loop Cada hora (scheduled job)
+    InventorySvc -> AnalyticsSvc: Análisis predictivo de demanda
+    AnalyticsSvc -> DB: Query sales velocity por producto
+    DB -> AnalyticsSvc: Datos de ventas históricas
+    
+    AnalyticsSvc -> AnalyticsSvc: Calcular tiempo estimado de agotamiento
+    AnalyticsSvc -> InventorySvc: Productos con riesgo de agotarse
+    
+    InventorySvc -> NotifSvc: Generar reporte predictivo
+    NotifSvc -> AdminUI: Dashboard de recomendaciones de restock
+    AdminUI -> Admin: 📊 Productos que requieren reposición pronto
+end
+
+== Ajuste de Inventario ==
+
+Admin -> AdminUI: Realizar ajuste de inventario (daño, robo, etc.)
+AdminUI -> Gateway: PUT /admin/inventory/{productId}/adjust
+Gateway -> InventorySvc: Ajustar stock
+
+InventorySvc -> DB: BEGIN transaction
+InventorySvc -> DB: SELECT stock FROM products WHERE id = ?
+DB -> InventorySvc: Stock actual
+
+InventorySvc -> DB: UPDATE products SET stock = ?
+InventorySvc -> DB: INSERT INTO stock_movements (product_id, type='adjustment', quantity, reason, notes)
+InventorySvc -> DB: INSERT INTO inventory_audits (product_id, old_stock, new_stock, reason, admin_id)
+
+InventorySvc -> AnalyticsSvc: Log inventory adjustment
+AnalyticsSvc -> AnalyticsSvc: Update shrinkage metrics
+
+InventorySvc -> DB: COMMIT transaction
+InventorySvc -> AdminUI: Ajuste completado
+AdminUI -> Admin: ✅ Inventario ajustado + registro de auditoría
+
+== Sincronización de Stock Multicanal ==
+
+note over InventorySvc: Para tiendas con múltiples canales (online + físico)
+
+participant "POS System" as POS
+
+POS -> InventorySvc: Venta en tienda física
+InventorySvc -> InventorySvc: Aplicar misma lógica de reducción
+InventorySvc -> DB: Update stock + log movement
+InventorySvc -> ProductSvc: Sync online catalog
+ProductSvc -> Redis: Update cache
+ProductSvc -> AdminUI: Real-time stock update
+AdminUI -> Admin: 🔄 Stock sincronizado entre canales
+
+note over OrderSvc, Admin: Inventario gestionado automáticamente\nAlertas proactivas de stock bajo\nSincronización multicanal\nAnalíticas predictivas de demanda
+
+@enduml

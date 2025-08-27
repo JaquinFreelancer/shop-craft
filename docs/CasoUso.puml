@@ -1,0 +1,273 @@
+@startuml UseCase_Ecommerce_System
+
+!define ACTOR actor
+!define USECASE usecase
+!define SYSTEM rectangle
+
+left to right direction
+skinparam packageStyle rectangle
+
+' ===== COMENTARIO DESCRIPTIVO =====
+' Sistema E-commerce para Pequeños Comercios
+' Casos de uso organizados por actores y funcionalidades:
+' - Gestión completa de productos y catálogo
+' - Carrito de compras y procesamiento de órdenes
+' - Sistema de usuarios con roles diferenciados
+' - Integración con gateways de pago múltiples
+' - Gestión de inventario y stock
+' - Sistema de promociones y marketing
+' - Reviews, wishlist y experiencia social
+' - Panel administrativo completo
+' - Analíticas y reportes
+
+' ===== ACTORES =====
+
+ACTOR "Cliente Anónimo" as Anonymous
+ACTOR "Cliente Registrado" as Customer
+ACTOR "Administrador" as Admin
+ACTOR "Manager de Tienda" as Manager
+ACTOR "Sistema de Pagos" as PaymentSystem
+ACTOR "Sistema de Email" as EmailSystem
+ACTOR "Sistema de Envíos" as ShippingSystem
+
+' ===== SISTEMA PRINCIPAL =====
+
+SYSTEM "Sistema E-commerce" {
+
+  ' ===== CASOS DE USO PÚBLICOS =====
+  package "Navegación y Descubrimiento" {
+    USECASE "Ver Catálogo de Productos" as UC001
+    USECASE "Buscar Productos" as UC002
+    USECASE "Ver Detalles del Producto" as UC003
+    USECASE "Filtrar por Categoría" as UC004
+    USECASE "Ver Ofertas y Promociones" as UC005
+    USECASE "Comparar Productos" as UC006
+  }
+
+  ' ===== CASOS DE USO DE AUTENTICACIÓN =====
+  package "Autenticación y Registro" {
+    USECASE "Registrarse" as UC101
+    USECASE "Iniciar Sesión" as UC102
+    USECASE "Verificar Email" as UC103
+    USECASE "Recuperar Contraseña" as UC104
+    USECASE "Cerrar Sesión" as UC105
+    USECASE "Login con Redes Sociales" as UC106
+  }
+
+  ' ===== CASOS DE USO DE PERFIL =====
+  package "Gestión de Perfil" {
+    USECASE "Ver Perfil de Cliente" as UC201
+    USECASE "Editar Perfil" as UC202
+    USECASE "Gestionar Direcciones" as UC203
+    USECASE "Cambiar Contraseña" as UC204
+    USECASE "Configurar Notificaciones" as UC205
+    USECASE "Eliminar Cuenta" as UC206
+  }
+
+  ' ===== CASOS DE USO DE CARRITO =====
+  package "Gestión de Carrito" {
+    USECASE "Agregar al Carrito" as UC301
+    USECASE "Actualizar Cantidad" as UC302
+    USECASE "Remover del Carrito" as UC303
+    USECASE "Ver Carrito" as UC304
+    USECASE "Calcular Totales" as UC305
+    USECASE "Guardar para Después" as UC306
+    USECASE "Aplicar Cupón de Descuento" as UC307
+  }
+
+  ' ===== CASOS DE USO DE CHECKOUT =====
+  package "Proceso de Compra" {
+    USECASE "Iniciar Checkout" as UC401
+    USECASE "Seleccionar Dirección de Envío" as UC402
+    USECASE "Elegir Método de Envío" as UC403
+    USECASE "Procesar Pago" as UC404
+    USECASE "Confirmar Orden" as UC405
+    USECASE "Recibir Confirmación" as UC406
+  }
+
+  ' ===== CASOS DE USO DE ÓRDENES =====
+  package "Gestión de Órdenes" {
+    USECASE "Ver Historial de Órdenes" as UC501
+    USECASE "Ver Detalles de Orden" as UC502
+    USECASE "Rastrear Envío" as UC503
+    USECASE "Cancelar Orden" as UC504
+    USECASE "Solicitar Devolución" as UC505
+    USECASE "Descargar Factura" as UC506
+    USECASE "Reordenar Productos" as UC507
+  }
+
+  ' ===== CASOS DE USO DE WISHLIST =====
+  package "Lista de Deseos" {
+    USECASE "Crear Wishlist" as UC601
+    USECASE "Agregar a Wishlist" as UC602
+    USECASE "Gestionar Wishlist" as UC603
+    USECASE "Compartir Wishlist" as UC604
+    USECASE "Mover de Wishlist a Carrito" as UC605
+  }
+
+  ' ===== CASOS DE USO DE REVIEWS =====
+  package "Reseñas y Calificaciones" {
+    USECASE "Escribir Reseña" as UC701
+    USECASE "Ver Reseñas de Producto" as UC702
+    USECASE "Calificar Reseña Útil" as UC703
+    USECASE "Editar Mi Reseña" as UC704
+    USECASE "Responder a Reseña" as UC705
+  }
+
+  ' ===== CASOS DE USO ADMINISTRATIVOS =====
+  package "Gestión de Productos (Admin)" {
+    USECASE "Crear Producto" as UC801
+    USECASE "Editar Producto" as UC802
+    USECASE "Eliminar Producto" as UC803
+    USECASE "Gestionar Categorías" as UC804
+    USECASE "Gestionar Stock" as UC805
+    USECASE "Importar Productos" as UC806
+    USECASE "Configurar Variantes" as UC807
+  }
+
+  package "Gestión de Órdenes (Admin)" {
+    USECASE "Ver Todas las Órdenes" as UC851
+    USECASE "Procesar Orden" as UC852
+    USECASE "Actualizar Estado de Envío" as UC853
+    USECASE "Procesar Reembolso" as UC854
+    USECASE "Gestionar Devoluciones" as UC855
+  }
+
+  package "Gestión de Clientes (Admin)" {
+    USECASE "Ver Lista de Clientes" as UC901
+    USECASE "Ver Perfil de Cliente" as UC902
+    USECASE "Suspender Cliente" as UC903
+    USECASE "Gestionar Roles de Usuario" as UC904
+  }
+
+  package "Marketing y Promociones" {
+    USECASE "Crear Cupones" as UC951
+    USECASE "Gestionar Campañas" as UC952
+    USECASE "Enviar Newsletter" as UC953
+    USECASE "Configurar Ofertas" as UC954
+  }
+
+  package "Analíticas y Reportes" {
+    USECASE "Ver Dashboard de Ventas" as UC1001
+    USECASE "Generar Reporte de Ventas" as UC1002
+    USECASE "Analizar Comportamiento" as UC1003
+    USECASE "Ver Productos Populares" as UC1004
+    USECASE "Monitorear Inventario" as UC1005
+  }
+
+  package "Configuración del Sistema" {
+    USECASE "Configurar Métodos de Pago" as UC1051
+    USECASE "Configurar Envíos" as UC1052
+    USECASE "Gestionar Configuraciones" as UC1053
+    USECASE "Ver Logs de Auditoría" as UC1054
+  }
+}
+
+' ===== RELACIONES DE ACTORES CON CASOS DE USO =====
+
+' Cliente Anónimo
+Anonymous --> UC001
+Anonymous --> UC002
+Anonymous --> UC003
+Anonymous --> UC004
+Anonymous --> UC005
+Anonymous --> UC006
+Anonymous --> UC101
+Anonymous --> UC102
+Anonymous --> UC103
+Anonymous --> UC104
+Anonymous --> UC301
+Anonymous --> UC302
+Anonymous --> UC303
+Anonymous --> UC304
+Anonymous --> UC305
+Anonymous --> UC401
+Anonymous --> UC404
+Anonymous --> UC702
+Anonymous --> UC503
+
+' Cliente Registrado (hereda de Anónimo + casos específicos)
+Customer --> UC105
+Customer --> UC106
+Customer --> UC201
+Customer --> UC202
+Customer --> UC203
+Customer --> UC204
+Customer --> UC205
+Customer --> UC206
+Customer --> UC306
+Customer --> UC307
+Customer --> UC402
+Customer --> UC403
+Customer --> UC405
+Customer --> UC406
+Customer --> UC501
+Customer --> UC502
+Customer --> UC504
+Customer --> UC505
+Customer --> UC506
+Customer --> UC507
+Customer --> UC601
+Customer --> UC602
+Customer --> UC603
+Customer --> UC604
+Customer --> UC605
+Customer --> UC701
+Customer --> UC703
+Customer --> UC704
+
+' Manager de Tienda
+Manager --> UC801
+Manager --> UC802
+Manager --> UC805
+Manager --> UC851
+Manager --> UC852
+Manager --> UC853
+
+' Administrador (incluye todo)
+Admin --> UC803
+Admin --> UC804
+Admin --> UC806
+Admin --> UC807
+Admin --> UC854
+Admin --> UC855
+Admin --> UC901
+Admin --> UC902
+Admin --> UC903
+Admin --> UC904
+Admin --> UC951
+Admin --> UC952
+Admin --> UC953
+Admin --> UC954
+Admin --> UC1001
+Admin --> UC1002
+Admin --> UC1003
+Admin --> UC1004
+Admin --> UC1005
+Admin --> UC1051
+Admin --> UC1052
+Admin --> UC1053
+Admin --> UC1054
+
+' ===== RELACIONES CON SISTEMAS EXTERNOS =====
+
+UC404 --> PaymentSystem : procesar pago
+UC406 --> EmailSystem : enviar confirmación
+UC503 --> ShippingSystem : obtener tracking
+UC505 --> EmailSystem : notificar devolución
+UC953 --> EmailSystem : enviar newsletter
+UC103 --> EmailSystem : enviar verificación
+UC104 --> EmailSystem : enviar reset
+
+' ===== RELACIONES DE INCLUSIÓN Y EXTENSIÓN =====
+
+UC401 ..> UC305 : <<include>>
+UC405 ..> UC406 : <<include>>
+UC301 ..> UC305 : <<include>>
+UC602 ..> UC603 : <<extend>>
+UC404 ..> UC405 : <<include>>
+UC501 ..> UC502 : <<extend>>
+UC801 ..> UC805 : <<include>>
+UC952 ..> UC953 : <<extend>>
+
+@enduml

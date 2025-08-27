@@ -1,0 +1,134 @@
+@startuml Sequence_Product_Search
+
+actor "Cliente" as Customer
+participant "Frontend" as Frontend
+participant "API Gateway" as Gateway
+participant "Search Service" as SearchSvc
+participant "Product Service" as ProductSvc
+participant "Cache" as Redis
+participant "Elasticsearch" as ES
+participant "Database" as DB
+
+title Búsqueda y Filtrado de Productos
+
+== Búsqueda con Autocompletado ==
+
+Customer -> Frontend: Escribir en barra de búsqueda
+Frontend -> Frontend: Debounce input (300ms)
+Frontend -> Gateway: GET /search/suggestions?q=smartphone
+Gateway -> SearchSvc: Obtener sugerencias
+
+SearchSvc -> Redis: Check suggestions cache
+alt Cache hit
+    Redis -> SearchSvc: Cached suggestions
+else Cache miss
+    SearchSvc -> ES: Query suggestions index
+    ES -> SearchSvc: Matching suggestions
+    SearchSvc -> Redis: Cache suggestions (TTL: 1h)
+end
+
+SearchSvc -> Gateway: Lista de sugerencias
+Gateway -> Frontend: Sugerencias de búsqueda
+Frontend -> Customer: Mostrar dropdown con sugerencias
+
+== Búsqueda Principal ==
+
+Customer -> Frontend: Enter o clic en "Buscar"
+Frontend -> Gateway: GET /search/products?q=smartphone&page=1&limit=24
+
+Gateway -> SearchSvc: Ejecutar búsqueda de productos
+SearchSvc -> SearchSvc: Analizar query + aplicar stemming
+SearchSvc -> ES: Full-text search query
+ES -> SearchSvc: Matching products con scoring
+
+SearchSvc -> ProductSvc: Enriquecer con datos actuales
+ProductSvc -> Redis: Bulk get product data
+alt Algunos productos no en cache
+    ProductSvc -> DB: Query missing products
+    DB -> ProductSvc: Product details
+    ProductSvc -> Redis: Cache products
+end
+
+ProductSvc -> SearchSvc: Productos enriquecidos
+SearchSvc -> SearchSvc: Aplicar business rules (stock, active)
+SearchSvc -> Gateway: Resultados de búsqueda
+Gateway -> Frontend: Search results + metadata
+Frontend -> Customer: Mostrar productos + paginación
+
+== Aplicar Filtros ==
+
+Customer -> Frontend: Seleccionar filtros (categoría, precio, marca)
+Frontend -> Gateway: GET /search/products?q=smartphone&category=electronics&minPrice=100&maxPrice=500&brand=samsung
+
+Gateway -> SearchSvc: Búsqueda con filtros
+SearchSvc -> ES: Query with filters + aggregations
+ES -> SearchSvc: Filtered results + facet counts
+
+SearchSvc -> SearchSvc: Validar filtros con business rules
+SearchSvc -> Gateway: Resultados filtrados + facets disponibles
+Gateway -> Frontend: Filtered products + filter counts
+Frontend -> Customer: Actualizar resultados + sidebar de filtros
+
+== Ordenamiento ==
+
+Customer -> Frontend: Cambiar ordenamiento (precio, popularidad, etc.)
+Frontend -> Gateway: GET /search/products?q=smartphone&sort=price&order=asc
+
+Gateway -> SearchSvc: Aplicar ordenamiento
+SearchSvc -> ES: Re-query with sort parameters
+ES -> SearchSvc: Sorted results
+
+alt Ordenamiento por popularidad
+    SearchSvc -> AnalyticsSvc: Get popularity scores
+    AnalyticsSvc -> SearchSvc: Product popularity data
+    SearchSvc -> SearchSvc: Apply popularity sorting
+end
+
+SearchSvc -> Gateway: Resultados ordenados
+Gateway -> Frontend: Sorted product list
+Frontend -> Customer: Productos reordenados
+
+== Tracking de Búsqueda ==
+
+note over SearchSvc: Registrar analytics de búsqueda para mejorar resultados
+
+SearchSvc -> AnalyticsSvc: Log search event
+AnalyticsSvc -> InfluxDB: Store search metrics
+AnalyticsSvc -> AnalyticsSvc: Update search analytics
+
+Customer -> Frontend: Clic en producto
+Frontend -> AnalyticsSvc: Track search click-through
+AnalyticsSvc -> InfluxDB: Log click event
+AnalyticsSvc -> SearchSvc: Update product relevance score
+
+== Búsqueda Sin Resultados ==
+
+alt Sin resultados encontrados
+    SearchSvc -> SearchSvc: Aplicar spell correction
+    SearchSvc -> ES: Query with corrected spelling
+    
+    alt Resultados con corrección
+        SearchSvc -> Gateway: Suggested results
+        Gateway -> Frontend: "Mostrando resultados para: {corrected_term}"
+        Frontend -> Customer: Resultados sugeridos
+    else Aún sin resultados
+        SearchSvc -> ProductSvc: Get popular/recommended products
+        ProductSvc -> SearchSvc: Alternative products
+        SearchSvc -> Gateway: No results + alternatives
+        Gateway -> Frontend: "Sin resultados" + productos sugeridos
+        Frontend -> Customer: Mensaje + productos alternativos
+    end
+end
+
+== Actualización de Índice (Background) ==
+
+note over ProductSvc: Cuando se actualiza un producto, se reindexar automáticamente
+
+ProductSvc -> SearchSvc: Product updated event
+SearchSvc -> ES: Update/index product document
+ES -> SearchSvc: Index updated
+SearchSvc -> Redis: Invalidate related caches
+
+note over Customer, ES: Búsqueda optimizada con relevancia\nFiltros dinámicos con facets\nSugerencias inteligentes\nTracking para mejora continua
+
+@enduml

@@ -1,0 +1,118 @@
+@startuml Sequence_Analytics_System
+
+actor "Administrador" as Admin
+participant "Admin Dashboard" as AdminUI
+participant "API Gateway" as Gateway
+participant "Auth Service" as AuthSvc
+participant "Analytics Service" as AnalyticsSvc
+participant "Order Service" as OrderSvc
+participant "Product Service" as ProductSvc
+participant "Database" as DB
+participant "Analytics DB" as InfluxDB
+participant "Cache" as Redis
+participant "Report Generator" as ReportGen
+
+title Sistema de Analytics y Reportes
+
+== Solicitar Dashboard de Ventas ==
+
+Admin -> AdminUI: Acceder a Analytics Dashboard
+AdminUI -> Gateway: GET /admin/analytics/dashboard?period=30d
+Gateway -> AuthSvc: Verificar permisos de analytics
+AuthSvc -> Gateway: Acceso autorizado
+
+Gateway -> AnalyticsSvc: Generar dashboard data
+AnalyticsSvc -> Redis: Check dashboard cache
+alt Cache válido (TTL < 5min)
+    Redis -> AnalyticsSvc: Cached dashboard data
+else Cache expirado o inexistente
+    AnalyticsSvc -> AnalyticsSvc: Compilar métricas del dashboard
+    
+    par Métricas de Ventas
+        AnalyticsSvc -> OrderSvc: GET sales metrics (last 30 days)
+        OrderSvc -> DB: Query sales data
+        DB -> OrderSvc: Sales totals, order counts
+        OrderSvc -> AnalyticsSvc: Sales metrics
+    and Métricas de Productos
+        AnalyticsSvc -> ProductSvc: GET product performance
+        ProductSvc -> DB: Query best sellers, low stock
+        DB -> ProductSvc: Product metrics
+        ProductSvc -> AnalyticsSvc: Product performance
+    and Métricas de Clientes
+        AnalyticsSvc -> DB: Query customer metrics
+        DB -> AnalyticsSvc: New customers, retention rates
+    and Métricas de Tiempo Real
+        AnalyticsSvc -> InfluxDB: Query real-time metrics
+        InfluxDB -> AnalyticsSvc: Live traffic, conversion rates
+    end
+    
+    AnalyticsSvc -> AnalyticsSvc: Procesar y agregar métricas
+    AnalyticsSvc -> Redis: Cache dashboard (TTL: 5min)
+end
+
+AnalyticsSvc -> Gateway: Dashboard data
+Gateway -> AdminUI: Analytics response
+AdminUI -> Admin: Mostrar dashboard con gráficos
+
+== Generar Reporte Detallado ==
+
+Admin -> AdminUI: Solicitar "Reporte de Ventas Detallado"
+AdminUI -> Gateway: POST /admin/reports/sales
+Gateway -> ReportGen: Generar reporte de ventas
+
+ReportGen -> OrderSvc: Query detailed sales data
+OrderSvc -> DB: Complex sales query with joins
+DB -> OrderSvc: Detailed sales records
+
+ReportGen -> ProductSvc: Query product details
+ProductSvc -> DB: Product information for report
+DB -> ProductSvc: Product data
+
+ReportGen -> ReportGen: Procesar datos + generar PDF/Excel
+ReportGen -> ReportGen: Aplicar templates y formatting
+
+ReportGen -> Gateway: Reporte generado + download URL
+Gateway -> AdminUI: Reporte listo para descarga
+AdminUI -> Admin: Mostrar link de descarga
+
+== Tracking de Eventos en Tiempo Real ==
+
+note over AnalyticsSvc: Eventos son capturados en tiempo real desde toda la aplicación
+
+participant "Customer Action" as Customer
+participant "Event Tracker" as EventTracker
+
+Customer -> EventTracker: Evento (product_view, add_to_cart, purchase)
+EventTracker -> AnalyticsSvc: Enviar evento
+AnalyticsSvc -> InfluxDB: Store time-series event
+AnalyticsSvc -> AnalyticsSvc: Update real-time counters
+
+loop Cada minuto
+    AnalyticsSvc -> InfluxDB: Aggregate events
+    AnalyticsSvc -> Redis: Update live metrics cache
+    AdminUI -> Gateway: SSE request for live updates
+    Gateway -> AnalyticsSvc: Get live metrics
+    AnalyticsSvc -> Gateway: Current metrics
+    Gateway -> AdminUI: Stream live data
+    AdminUI -> Admin: Update dashboard en tiempo real
+end
+
+== Alertas Automáticas ==
+
+AnalyticsSvc -> AnalyticsSvc: Monitor for alert conditions
+alt Stock bajo detectado
+    AnalyticsSvc -> ProductSvc: Check low stock products
+    ProductSvc -> AnalyticsSvc: Products below threshold
+    AnalyticsSvc -> AdminUI: Push notification
+    AdminUI -> Admin: Alerta de stock bajo
+else Pico de ventas detectado
+    AnalyticsSvc -> AdminUI: Push notification
+    AdminUI -> Admin: Alerta de alta demanda
+else Meta de ventas alcanzada
+    AnalyticsSvc -> AdminUI: Push notification
+    AdminUI -> Admin: Celebración de meta alcanzada
+end
+
+note over Admin, ReportGen: Dashboard actualizado en tiempo real\nReportes generados bajo demanda\nAlertas automáticas configurables\nMétricas históricas y en vivo
+
+@enduml

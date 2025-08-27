@@ -1,0 +1,81 @@
+@startuml Sequence_Add_To_Cart
+
+actor "Cliente" as Customer
+participant "Frontend" as Frontend
+participant "API Gateway" as Gateway
+participant "Auth Service" as AuthSvc
+participant "Product Service" as ProductSvc
+participant "Cart Service" as CartSvc
+participant "Inventory Service" as InventorySvc
+participant "Database" as DB
+participant "Cache" as Redis
+
+title Agregar Producto al Carrito - Flujo Completo
+
+Customer -> Frontend: Clic "Agregar al Carrito"
+Frontend -> Frontend: Validar selección de variante (si aplica)
+
+alt Usuario autenticado
+    Frontend -> Gateway: POST /cart/items (Authorization: Bearer token)
+    Gateway -> AuthSvc: Validar JWT token
+    AuthSvc -> Redis: Verificar token en cache
+    Redis -> AuthSvc: Token válido + user info
+    AuthSvc -> Gateway: Usuario autenticado
+else Usuario invitado
+    Frontend -> Gateway: POST /cart/items (Session-ID)
+    Gateway -> CartSvc: Crear/obtener carrito de sesión
+end
+
+Gateway -> ProductSvc: Verificar producto exists
+ProductSvc -> Redis: Buscar producto en cache
+alt Producto en cache
+    Redis -> ProductSvc: Datos del producto
+else Producto no en cache
+    ProductSvc -> DB: SELECT product WHERE id = ?
+    DB -> ProductSvc: Product data
+    ProductSvc -> Redis: Cachear producto (TTL: 1h)
+end
+
+ProductSvc -> Gateway: Producto válido + precio actual
+
+Gateway -> InventorySvc: Verificar stock disponible
+InventorySvc -> DB: SELECT stock WHERE product_id = ?
+DB -> InventorySvc: Stock actual
+
+alt Stock suficiente
+    InventorySvc -> Gateway: Stock disponible
+    
+    Gateway -> CartSvc: Agregar item al carrito
+    CartSvc -> DB: BEGIN transaction
+    
+    alt Item ya existe en carrito
+        CartSvc -> DB: UPDATE cart_items SET quantity = quantity + ?
+    else Nuevo item
+        CartSvc -> DB: INSERT INTO cart_items (cart_id, product_id, quantity, price)
+    end
+    
+    CartSvc -> CartSvc: Calcular nuevos totales
+    CartSvc -> DB: UPDATE carts SET total_items = ?, total_amount = ?
+    CartSvc -> DB: COMMIT transaction
+    
+    CartSvc -> Redis: Actualizar cache del carrito
+    CartSvc -> Gateway: Item agregado + totales
+    Gateway -> Frontend: 200 OK + cart data
+    Frontend -> Frontend: Actualizar contador carrito
+    Frontend -> Customer: Mostrar notificación éxito + productos relacionados
+
+else Stock insuficiente
+    InventorySvc -> Gateway: Stock insuficiente
+    Gateway -> Frontend: 409 Conflict + stock disponible
+    Frontend -> Customer: Mostrar mensaje "Solo quedan X unidades"
+    
+    opt Cliente acepta cantidad disponible
+        Customer -> Frontend: Ajustar a cantidad máxima
+        Frontend -> Gateway: POST /cart/items (cantidad ajustada)
+        note right: Continúa flujo normal con cantidad máxima
+    end
+end
+
+note over Customer, Redis: Producto agregado al carrito\nTotales actualizados\nCache sincronizado
+
+@enduml

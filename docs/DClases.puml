@@ -1,0 +1,795 @@
+@startuml Class_Diagram_Ecommerce_System
+
+!define ABSTRACT abstract class
+!define INTERFACE interface
+
+' ===== COMENTARIO DESCRIPTIVO =====
+' Sistema E-commerce - Diagrama de Clases
+' Arquitectura orientada a objetos diseñada para:
+' - Gestión completa de productos y catálogo
+' - Carrito de compras y procesamiento de órdenes
+' - Sistema de usuarios con roles granulares
+' - Integración con múltiples gateways de pago
+' - Gestión de inventario y stock
+' - Sistema de promociones y cupones
+' - Reviews y wishlist
+' - Configuración flexible de envíos
+' Patrones aplicados: Repository, Service Layer, Factory, Observer, Strategy
+
+' ===== INTERFACES DE SERVICIOS =====
+
+INTERFACE IUserService {
+  ' Gestión completa de usuarios y autenticación
+  +createUser(userData: UserCreateDTO): Promise<User>
+  +authenticateUser(email: string, password: string): Promise<AuthResult>
+  +updateUser(id: string, userData: UserUpdateDTO): Promise<User>
+  +getUserById(id: string): Promise<User>
+  +verifyEmail(token: string): Promise<boolean>
+  +resetPassword(email: string): Promise<boolean>
+  +addAddress(userId: string, address: AddressDTO): Promise<Address>
+  +setDefaultAddress(userId: string, addressId: string): Promise<boolean>
+}
+
+INTERFACE IProductService {
+  ' Gestión del catálogo de productos
+  +createProduct(productData: ProductCreateDTO): Promise<Product>
+  +updateProduct(id: string, productData: ProductUpdateDTO): Promise<Product>
+  +deleteProduct(id: string): Promise<boolean>
+  +getProductById(id: string): Promise<Product>
+  +getProductBySlug(slug: string): Promise<Product>
+  +searchProducts(criteria: ProductSearchCriteria): Promise<Product[]>
+  +updateStock(productId: string, quantity: number): Promise<Product>
+  +checkLowStock(): Promise<Product[]>
+}
+
+INTERFACE IOrderService {
+  ' Procesamiento completo de órdenes
+  +createOrder(orderData: OrderCreateDTO): Promise<Order>
+  +updateOrderStatus(id: string, status: OrderStatus): Promise<Order>
+  +processPayment(orderId: string, paymentData: PaymentDTO): Promise<Payment>
+  +calculateShipping(orderData: OrderDTO): Promise<ShippingRate[]>
+  +applyDiscount(orderId: string, couponCode: string): Promise<Order>
+  +cancelOrder(id: string, reason: string): Promise<Order>
+  +getOrdersByUser(userId: string): Promise<Order[]>
+}
+
+INTERFACE ICartService {
+  ' Gestión del carrito de compras
+  +getCart(userId: string | sessionId: string): Promise<Cart>
+  +addItem(cartId: string, item: CartItemDTO): Promise<Cart>
+  +updateItem(cartId: string, itemId: string, quantity: number): Promise<Cart>
+  +removeItem(cartId: string, itemId: string): Promise<Cart>
+  +clearCart(cartId: string): Promise<boolean>
+  +calculateTotals(cartId: string): Promise<CartTotals>
+  +convertToOrder(cartId: string, orderData: OrderDTO): Promise<Order>
+}
+
+INTERFACE IPaymentService {
+  ' Integración con múltiples gateways de pago
+  +processPayment(paymentData: PaymentDTO): Promise<PaymentResult>
+  +refundPayment(paymentId: string, amount?: number): Promise<RefundResult>
+  +validatePaymentMethod(method: PaymentMethod): Promise<boolean>
+  +getPaymentStatus(transactionId: string): Promise<PaymentStatus>
+  +setupWebhook(provider: string): Promise<boolean>
+}
+
+INTERFACE INotificationService {
+  ' Sistema de notificaciones por email
+  +sendOrderConfirmation(order: Order): Promise<boolean>
+  +sendShippingNotification(order: Order): Promise<boolean>
+  +sendLowStockAlert(products: Product[]): Promise<boolean>
+  +sendNewsletterEmail(subscribers: string[], content: string): Promise<boolean>
+  +sendPasswordResetEmail(user: User, token: string): Promise<boolean>
+}
+
+' ===== CLASES ABSTRACTAS BASE =====
+
+ABSTRACT BaseEntity {
+  ' Clase base para todas las entidades del sistema
+  #id: string
+  #createdAt: Date
+  #updatedAt: Date
+  #isActive: boolean
+  --
+  +getId(): string
+  +getCreatedAt(): Date
+  +getUpdatedAt(): Date
+  +setUpdatedAt(date: Date): void
+  +activate(): void
+  +deactivate(): void
+  +isActiveEntity(): boolean
+  #{abstract} validate(): ValidationResult
+}
+
+ABSTRACT BaseService {
+  ' Clase base para todos los servicios
+  #repository: IRepository<T>
+  #logger: ILogger
+  #validator: IValidator
+  #eventEmitter: IEventEmitter
+  --
+  +{abstract} validate(data: any): ValidationResult
+  #logOperation(operation: string, data: any): void
+  #handleError(error: Error): void
+  #emitEvent(eventName: string, data: any): void
+}
+
+' ===== ENTIDADES DE DOMINIO =====
+
+class User extends BaseEntity {
+  ' Usuario del sistema con autenticación completa
+  -email: string
+  -passwordHash: string
+  -firstName: string
+  -lastName: string
+  -phone: string
+  -dateOfBirth: Date
+  -gender: Gender
+  -emailVerified: boolean
+  -lastLoginAt: Date
+  -roles: Role[]
+  -addresses: Address[]
+  -orders: Order[]
+  -carts: Cart[]
+  -wishlists: Wishlist[]
+  -reviews: Review[]
+  --
+  +constructor(userData: UserCreateDTO)
+  +getFullName(): string
+  +updateProfile(data: UserUpdateDTO): void
+  +verifyEmail(): void
+  +updateLastLogin(): void
+  +hashPassword(password: string): void
+  +validatePassword(password: string): boolean
+  +hasRole(roleName: string): boolean
+  +assignRole(role: Role): void
+  +removeRole(roleId: string): void
+  +getPermissions(): Permission[]
+  +addAddress(address: Address): void
+  +setDefaultAddress(addressId: string): void
+  +getDefaultAddress(type: AddressType): Address
+  +canPurchase(): boolean
+  +getTotalSpent(): Money
+}
+
+class Role extends BaseEntity {
+  ' Roles del sistema con permisos granulares
+  -name: string                     ' admin, customer, manager
+  -description: string
+  -permissions: Permission[]
+  --
+  +constructor(name: string, description: string)
+  +addPermission(permission: Permission): void
+  +removePermission(permissionId: string): void
+  +hasPermission(permission: string): boolean
+  +getPermissionNames(): string[]
+  +isAdminRole(): boolean
+  +isCustomerRole(): boolean
+}
+
+class Permission {
+  ' Permisos granulares del sistema
+  -id: string
+  -name: string                     ' products.create, orders.view
+  -resource: string                 ' products, orders, users
+  -action: string                   ' create, read, update, delete
+  -description: string
+  --
+  +constructor(name: string, resource: string, action: string)
+  +getFullPermission(): string
+  +matches(resource: string, action: string): boolean
+  +isWildcard(): boolean
+}
+
+class Address extends BaseEntity {
+  ' Direcciones de facturación y envío
+  -userId: string
+  -type: AddressType               ' billing, shipping
+  -firstName: string
+  -lastName: string
+  -company: string
+  -addressLine1: string
+  -addressLine2: string
+  -city: string
+  -state: string
+  -postalCode: string
+  -country: string
+  -phone: string
+  -isDefault: boolean
+  --
+  +constructor(addressData: AddressDTO)
+  +getFullName(): string
+  +getFullAddress(): string
+  +isValidAddress(): boolean
+  +setAsDefault(): void
+  +formatForShipping(): ShippingAddress
+}
+
+class Category extends BaseEntity {
+  ' Categorías jerárquicas de productos
+  -name: string
+  -slug: string
+  -description: string
+  -parentId: string
+  -imageUrl: string
+  -metaTitle: string
+  -metaDescription: string
+  -sortOrder: number
+  -subcategories: Category[]
+  -products: Product[]
+  --
+  +constructor(categoryData: CategoryCreateDTO)
+  +addSubcategory(category: Category): void
+  +removeSubcategory(categoryId: string): void
+  +hasSubcategories(): boolean
+  +getProductCount(): number
+  +generateSlug(): string
+  +getFullPath(): string
+  +isParentOf(categoryId: string): boolean
+}
+
+class Product extends BaseEntity {
+  ' Producto del catálogo con variantes
+  -name: string
+  -slug: string
+  -description: string
+  -shortDescription: string
+  -sku: string
+  -categoryId: string
+  -price: Money
+  -comparePrice: Money
+  -costPrice: Money
+  -trackQuantity: boolean
+  -quantity: number
+  -lowStockThreshold: number
+  -weight: number
+  -dimensions: ProductDimensions
+  -requiresShipping: boolean
+  -taxable: boolean
+  -taxRate: number
+  -status: ProductStatus
+  -featured: boolean
+  -metaTitle: string
+  -metaDescription: string
+  -tags: string[]
+  -images: ProductImage[]
+  -variants: ProductVariant[]
+  -reviews: Review[]
+  --
+  +constructor(productData: ProductCreateDTO)
+  +updateStock(quantity: number): void
+  +checkStock(requestedQuantity: number): boolean
+  +isLowStock(): boolean
+  +isInStock(): boolean
+  +addImage(image: ProductImage): void
+  +setPrimaryImage(imageId: string): void
+  +addVariant(variant: ProductVariant): void
+  +getVariantByOptions(options: VariantOptions): ProductVariant
+  +calculatePrice(variantId?: string): Money
+  +getAverageRating(): number
+  +getTotalReviews(): number
+  +generateSlug(): string
+  +isPublished(): boolean
+  +canBePurchased(): boolean
+}
+
+class ProductVariant extends BaseEntity {
+  ' Variantes de producto (talla, color, etc.)
+  -productId: string
+  -variantName: string
+  -sku: string
+  -price: Money
+  -comparePrice: Money
+  -costPrice: Money
+  -quantity: number
+  -weight: number
+  -imageUrl: string
+  -variantOptions: VariantOptions   ' {size: "L", color: "Red"}
+  --
+  +constructor(variantData: VariantCreateDTO)
+  +updateStock(quantity: number): void
+  +isInStock(): boolean
+  +getOptionValue(optionName: string): string
+  +calculatePrice(): Money
+  +getDisplayName(): string
+}
+
+class Cart extends BaseEntity {
+  ' Carrito de compras persistente
+  -userId: string
+  -sessionId: string
+  -status: CartStatus              ' active, abandoned, converted
+  -totalItems: number
+  -totalAmount: Money
+  -expiresAt: Date
+  -items: CartItem[]
+  --
+  +constructor(userId?: string, sessionId?: string)
+  +addItem(product: Product, variant?: ProductVariant, quantity: number): CartItem
+  +updateItem(itemId: string, quantity: number): void
+  +removeItem(itemId: string): void
+  +clearCart(): void
+  +calculateTotals(): CartTotals
+  +isExpired(): boolean
+  +isEmpty(): boolean
+  +getTotalWeight(): number
+  +canCheckout(): boolean
+  +convertToOrder(): OrderDTO
+  +mergeWith(otherCart: Cart): void
+}
+
+class CartItem extends BaseEntity {
+  ' Item individual del carrito
+  -cartId: string
+  -productId: string
+  -variantId: string
+  -quantity: number
+  -unitPrice: Money
+  -totalPrice: Money
+  -product: Product
+  -variant: ProductVariant
+  --
+  +constructor(product: Product, variant: ProductVariant, quantity: number)
+  +updateQuantity(newQuantity: number): void
+  +calculateTotal(): Money
+  +isValid(): boolean                ' Verifica si el producto aún existe
+  +getDisplayName(): string
+  +canIncrease(): boolean            ' Verifica stock disponible
+}
+
+class Order extends BaseEntity {
+  ' Orden de compra completa
+  -orderNumber: string
+  -userId: string
+  -email: string
+  -status: OrderStatus             ' pending, confirmed, processing, shipped, delivered, cancelled
+  -paymentStatus: PaymentStatus    ' pending, paid, failed, refunded
+  -fulfillmentStatus: FulfillmentStatus ' unfulfilled, partially_fulfilled, fulfilled
+  -subtotal: Money
+  -taxAmount: Money
+  -shippingAmount: Money
+  -discountAmount: Money
+  -totalAmount: Money
+  -currency: string
+  -billingAddress: Address
+  -shippingAddress: Address
+  -shippingMethod: string
+  -trackingNumber: string
+  -notes: string
+  -processedAt: Date
+  -shippedAt: Date
+  -deliveredAt: Date
+  -cancelledAt: Date
+  -cancellationReason: string
+  -items: OrderItem[]
+  -payments: Payment[]
+  -couponsUsed: CouponUsage[]
+  --
+  +constructor(orderData: OrderCreateDTO)
+  +generateOrderNumber(): string
+  +addItem(product: Product, variant: ProductVariant, quantity: number): OrderItem
+  +calculateSubtotal(): Money
+  +calculateTax(): Money
+  +calculateShipping(): Money
+  +calculateTotal(): Money
+  +applyCoupon(coupon: Coupon): void
+  +processPayment(payment: Payment): void
+  +confirm(): void
+  +ship(trackingNumber: string): void
+  +deliver(): void
+  +cancel(reason: string): void
+  +canBeCancelled(): boolean
+  +canBeRefunded(): boolean
+  +getEstimatedDelivery(): Date
+  +updateFulfillmentStatus(): void
+}
+
+class OrderItem extends BaseEntity {
+  ' Item individual de la orden
+  -orderId: string
+  -productId: string
+  -variantId: string
+  -productName: string             ' Preservado histórico
+  -productSku: string              ' Preservado histórico
+  -variantDetails: VariantOptions  ' Preservado histórico
+  -quantity: number
+  -unitPrice: Money
+  -totalPrice: Money
+  --
+  +constructor(product: Product, variant: ProductVariant, quantity: number)
+  +calculateTotal(): Money
+  +getDisplayName(): string
+  +canBeRefunded(): boolean
+}
+
+class Payment extends BaseEntity {
+  ' Transacción de pago
+  -orderId: string
+  -paymentMethod: PaymentMethod    ' credit_card, paypal, stripe
+  -paymentProvider: string         ' stripe, paypal
+  -transactionId: string
+  -gatewayTransactionId: string
+  -amount: Money
+  -currency: string
+  -status: PaymentStatus
+  -gatewayResponse: PaymentResponse
+  -processedAt: Date
+  --
+  +constructor(paymentData: PaymentDTO)
+  +process(): PaymentResult
+  +refund(amount?: Money): RefundResult
+  +isSuccessful(): boolean
+  +canBeRefunded(): boolean
+  +getRefundableAmount(): Money
+}
+
+class Coupon extends BaseEntity {
+  ' Cupones de descuento
+  -code: string                    ' SAVE20, WELCOME10
+  -name: string
+  -description: string
+  -type: CouponType               ' percentage, fixed_amount
+  -value: number                  ' 20 para 20% o 10.00 para $10
+  -minimumAmount: Money
+  -maximumDiscount: Money
+  -usageLimit: number
+  -usageCount: number
+  -userUsageLimit: number
+  -startsAt: Date
+  -expiresAt: Date
+  -usages: CouponUsage[]
+  --
+  +constructor(couponData: CouponCreateDTO)
+  +isValid(): boolean
+  +isExpired(): boolean
+  +canBeUsed(): boolean
+  +canBeUsedByUser(userId: string): boolean
+  +calculateDiscount(amount: Money): Money
+  +incrementUsage(): void
+  +getUsageByUser(userId: string): number
+}
+
+class Review extends BaseEntity {
+  ' Reseñas de productos
+  -productId: string
+  -userId: string
+  -orderId: string
+  -rating: number                  ' 1-5 estrellas
+  -title: string
+  -reviewText: string
+  -isVerifiedPurchase: boolean
+  -isApproved: boolean
+  -helpfulVotes: number
+  --
+  +constructor(reviewData: ReviewCreateDTO)
+  +approve(): void
+  +reject(): void
+  +addHelpfulVote(): void
+  +isValidRating(): boolean
+  +canBeEdited(): boolean
+}
+
+class Wishlist extends BaseEntity {
+  ' Lista de deseos del usuario
+  -userId: string
+  -name: string                    ' "My Wishlist", "Birthday List"
+  -isPublic: boolean
+  -items: WishlistItem[]
+  --
+  +constructor(userId: string, name: string)
+  +addItem(product: Product, variant?: ProductVariant): WishlistItem
+  +removeItem(itemId: string): void
+  +hasProduct(productId: string): boolean
+  +moveToCart(itemId: string, cart: Cart): void
+  +shareUrl(): string
+}
+
+' ===== VALUE OBJECTS =====
+
+class Money {
+  ' Objeto de valor para manejo de dinero
+  -amount: number
+  -currency: string
+  --
+  +constructor(amount: number, currency: string)
+  +add(money: Money): Money
+  +subtract(money: Money): Money
+  +multiply(factor: number): Money
+  +divide(factor: number): Money
+  +isZero(): boolean
+  +isPositive(): boolean
+  +format(): string                ' "$10.99"
+  +equals(money: Money): boolean
+  +convertTo(currency: string): Money
+}
+
+class ProductDimensions {
+  ' Dimensiones físicas del producto
+  -length: number                  ' cm
+  -width: number                   ' cm
+  -height: number                  ' cm
+  --
+  +constructor(length: number, width: number, height: number)
+  +getVolume(): number
+  +toString(): string
+}
+
+class CartTotals {
+  ' Totales calculados del carrito
+  -subtotal: Money
+  -taxAmount: Money
+  -shippingAmount: Money
+  -discountAmount: Money
+  -totalAmount: Money
+  -totalItems: number
+  -totalWeight: number
+  --
+  +constructor()
+  +calculate(items: CartItem[], shippingRate?: ShippingRate, coupon?: Coupon): void
+  +addTax(rate: number): void
+  +applyDiscount(discount: Money): void
+}
+
+' ===== ENUMS =====
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum AddressType {
+  BILLING
+  SHIPPING
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum CartStatus {
+  ACTIVE
+  ABANDONED
+  CONVERTED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  PAYPAL
+  STRIPE
+  BANK_TRANSFER
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+' ===== SERVICIOS DE APLICACIÓN =====
+
+class UserService extends BaseService implements IUserService {
+  ' Servicio de gestión de usuarios
+  -userRepository: IUserRepository
+  -addressRepository: IAddressRepository
+  -emailService: IEmailService
+  -authService: IAuthService
+  --
+  +createUser(userData: UserCreateDTO): Promise<User>
+  +authenticateUser(email: string, password: string): Promise<AuthResult>
+  +updateUser(id: string, userData: UserUpdateDTO): Promise<User>
+  +getUserById(id: string): Promise<User>
+  +verifyEmail(token: string): Promise<boolean>
+  +resetPassword(email: string): Promise<boolean>
+  +addAddress(userId: string, address: AddressDTO): Promise<Address>
+  +setDefaultAddress(userId: string, addressId: string): Promise<boolean>
+  -hashPassword(password: string): string
+  -generateVerificationToken(): string
+  -validateUserData(userData: UserCreateDTO): ValidationResult
+}
+
+class ProductService extends BaseService implements IProductService {
+  ' Servicio de gestión de productos
+  -productRepository: IProductRepository
+  -categoryRepository: ICategoryRepository
+  -inventoryService: IInventoryService
+  -imageService: IImageService
+  --
+  +createProduct(productData: ProductCreateDTO): Promise<Product>
+  +updateProduct(id: string, productData: ProductUpdateDTO): Promise<Product>
+  +deleteProduct(id: string): Promise<boolean>
+  +getProductById(id: string): Promise<Product>
+  +getProductBySlug(slug: string): Promise<Product>
+  +searchProducts(criteria: ProductSearchCriteria): Promise<Product[]>
+  +updateStock(productId: string, quantity: number): Promise<Product>
+  +checkLowStock(): Promise<Product[]>
+  -validateProductData(productData: ProductCreateDTO): ValidationResult
+  -generateSlug(name: string): string
+  -processImages(images: ImageDTO[]): Promise<ProductImage[]>
+}
+
+class OrderService extends BaseService implements IOrderService {
+  ' Servicio de procesamiento de órdenes
+  -orderRepository: IOrderRepository
+  -cartService: ICartService
+  -paymentService: IPaymentService
+  -shippingService: IShippingService
+  -inventoryService: IInventoryService
+  -notificationService: INotificationService
+  --
+  +createOrder(orderData: OrderCreateDTO): Promise<Order>
+  +updateOrderStatus(id: string, status: OrderStatus): Promise<Order>
+  +processPayment(orderId: string, paymentData: PaymentDTO): Promise<Payment>
+  +calculateShipping(orderData: OrderDTO): Promise<ShippingRate[]>
+  +applyDiscount(orderId: string, couponCode: string): Promise<Order>
+  +cancelOrder(id: string, reason: string): Promise<Order>
+  +getOrdersByUser(userId: string): Promise<Order[]>
+  -generateOrderNumber(): string
+  -validateOrderData(orderData: OrderCreateDTO): ValidationResult
+  -reserveInventory(items: OrderItem[]): Promise<boolean>
+  -releaseInventory(items: OrderItem[]): Promise<boolean>
+}
+
+class CartService extends BaseService implements ICartService {
+  ' Servicio de gestión del carrito
+  -cartRepository: ICartRepository
+  -productService: IProductService
+  -shippingService: IShippingService
+  --
+  +getCart(userId: string | sessionId: string): Promise<Cart>
+  +addItem(cartId: string, item: CartItemDTO): Promise<Cart>
+  +updateItem(cartId: string, itemId: string, quantity: number): Promise<Cart>
+  +removeItem(cartId: string, itemId: string): Promise<Cart>
+  +clearCart(cartId: string): Promise<boolean>
+  +calculateTotals(cartId: string): Promise<CartTotals>
+  +convertToOrder(cartId: string, orderData: OrderDTO): Promise<Order>
+  -validateCartItem(item: CartItemDTO): ValidationResult
+  -checkProductAvailability(productId: string, quantity: number): Promise<boolean>
+  -mergeGuestCart(guestCart: Cart, userCart: Cart): Promise<Cart>
+}
+
+class PaymentService extends BaseService implements IPaymentService {
+  ' Servicio de procesamiento de pagos
+  -paymentRepository: IPaymentRepository
+  -stripeProvider: IStripeProvider
+  -paypalProvider: IPayPalProvider
+  --
+  +processPayment(paymentData: PaymentDTO): Promise<PaymentResult>
+  +refundPayment(paymentId: string, amount?: number): Promise<RefundResult>
+  +validatePaymentMethod(method: PaymentMethod): Promise<boolean>
+  +getPaymentStatus(transactionId: string): Promise<PaymentStatus>
+  +setupWebhook(provider: string): Promise<boolean>
+  -selectPaymentProvider(method: PaymentMethod): IPaymentProvider
+  -validatePaymentData(paymentData: PaymentDTO): ValidationResult
+  -handleWebhook(provider: string, payload: any): Promise<void>
+}
+
+' ===== CONTROLADORES =====
+
+class ProductController {
+  ' Controlador de productos para API REST
+  -productService: IProductService
+  -authService: IAuthService
+  --
+  +createProduct(req: Request, res: Response): Promise<Response>
+  +updateProduct(req: Request, res: Response): Promise<Response>
+  +deleteProduct(req: Request, res: Response): Promise<Response>
+  +getProduct(req: Request, res: Response): Promise<Response>
+  +getProducts(req: Request, res: Response): Promise<Response>
+  +searchProducts(req: Request, res: Response): Promise<Response>
+  +updateStock(req: Request, res: Response): Promise<Response>
+  -validatePermissions(userId: string, action: string): Promise<boolean>
+}
+
+class OrderController {
+  ' Controlador de órdenes para API REST
+  -orderService: IOrderService
+  -authService: IAuthService
+  --
+  +createOrder(req: Request, res: Response): Promise<Response>
+  +updateOrder(req: Request, res: Response): Promise<Response>
+  +getOrder(req: Request, res: Response): Promise<Response>
+  +getOrders(req: Request, res: Response): Promise<Response>
+  +cancelOrder(req: Request, res: Response): Promise<Response>
+  +trackOrder(req: Request, res: Response): Promise<Response>
+  -checkOrderPermissions(userId: string, orderId: string): Promise<boolean>
+}
+
+class CartController {
+  ' Controlador del carrito para API REST
+  -cartService: ICartService
+  -authService: IAuthService
+  --
+  +getCart(req: Request, res: Response): Promise<Response>
+  +addToCart(req: Request, res: Response): Promise<Response>
+  +updateCart(req: Request, res: Response): Promise<Response>
+  +removeFromCart(req: Request, res: Response): Promise<Response>
+  +clearCart(req: Request, res: Response): Promise<Response>
+  +checkout(req: Request, res: Response): Promise<Response>
+  -getCartIdentifier(req: Request): string
+}
+
+' ===== RELACIONES =====
+
+' Herencia
+BaseEntity <|-- User
+BaseEntity <|-- Product
+BaseEntity <|-- Order
+BaseEntity <|-- Cart
+BaseEntity <|-- Category
+BaseEntity <|-- Address
+BaseEntity <|-- Payment
+BaseEntity <|-- Coupon
+BaseEntity <|-- Review
+BaseEntity <|-- Wishlist
+
+BaseService <|-- UserService
+BaseService <|-- ProductService
+BaseService <|-- OrderService
+BaseService <|-- CartService
+BaseService <|-- PaymentService
+
+' Implementación de interfaces
+UserService ..|> IUserService : implements
+ProductService ..|> IProductService : implements
+OrderService ..|> IOrderService : implements
+CartService ..|> ICartService : implements
+PaymentService ..|> IPaymentService : implements
+
+' Relaciones de dominio
+User ||--o{ Address : "tiene direcciones"
+User ||--o{ Order : "realiza órdenes"
+User ||--o{ Cart : "posee carritos"
+User ||--o{ Wishlist : "tiene wishlists"
+User ||--o{ Review : "escribe reseñas"
+User ||--o{ Role : "tiene roles"
+
+Product ||--o{ ProductVariant : "tiene variantes"
+Product ||--o{ CartItem : "en carritos"
+Product ||--o{ OrderItem : "en órdenes"
+Product ||--o{ Review : "recibe reseñas"
+
+Category ||--o{ Product : "contiene productos"
+Category ||--o{ Category : "subcategorías"
+
+Cart ||--o{ CartItem : "contiene items"
+Order ||--o{ OrderItem : "contiene items"
+Order ||--o{ Payment : "tiene pagos"
+
+Coupon ||--o{ CouponUsage : "registra usos"
+
+' Dependencias de servicios
+ProductController ..> IProductService : uses
+OrderController ..> IOrderService : uses
+CartController ..> ICartService : uses
+
+OrderService ..> ICartService : uses
+OrderService ..> IPaymentService : uses
+CartService ..> IProductService : uses
+
+' Composición de value objects
+Product *-- Money : "contiene precios"
+Order *-- Money : "contiene totales"
+Cart *-- Money : "contiene total"
+Product *-- ProductDimensions : "contiene dimensiones"
+
+@enduml

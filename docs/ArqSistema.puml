@@ -1,0 +1,271 @@
+@startuml System_Architecture_Ecommerce
+
+!define RECTANGLE rectangle
+!define COMPONENT component
+!define DATABASE database
+!define CLOUD cloud
+!define INTERFACE interface
+
+' ===== COMENTARIO DESCRIPTIVO =====
+' Sistema E-commerce - Arquitectura del Sistema
+' Diseño de arquitectura escalable para pequeños comercios con:
+' - Arquitectura de microservicios modular
+' - Separación clara de responsabilidades
+' - Integración con servicios externos (pagos, email, storage)
+' - Optimización para performance y escalabilidad
+' - Seguridad y compliance (PCI DSS)
+' - Monitoreo y observabilidad completa
+' - Soporte para múltiples canales de venta
+' - Cache distribuido y CDN
+' - Auto-scaling y alta disponibilidad
+
+' ===== PRESENTATION LAYER =====
+RECTANGLE "🌐 Presentation Layer" as PresentationLayer {
+  COMPONENT "React Web App\n(Customer Frontend)" as WebApp
+  COMPONENT "Admin Dashboard\n(React/Vue)" as AdminDashboard
+  COMPONENT "Mobile App\n(React Native/PWA)" as MobileApp
+  COMPONENT "REST API Gateway\n(Express.js)" as APIGateway
+}
+
+' ===== CDN & LOAD BALANCING =====
+CLOUD "☁️ CDN & Load Balancing" as CDNLayer {
+  COMPONENT "CloudFlare CDN" as CDN
+  COMPONENT "Load Balancer\n(Nginx/HAProxy)" as LoadBalancer
+  COMPONENT "SSL Termination" as SSL
+  COMPONENT "DDoS Protection" as DDoSProtection
+}
+
+' ===== APPLICATION LAYER =====
+RECTANGLE "⚙️ Application Layer (Microservices)" as ApplicationLayer {
+  
+  RECTANGLE "🔐 Authentication Service" as AuthService {
+    COMPONENT "JWT Manager" as JWT
+    COMPONENT "User Authentication" as UserAuth
+    COMPONENT "Role-Based Access Control" as RBAC
+    COMPONENT "OAuth Integration" as OAuth
+    COMPONENT "Session Management" as SessionMgmt
+  }
+  
+  RECTANGLE "🛍️ Product Catalog Service" as ProductService {
+    COMPONENT "Product Management" as ProductMgmt
+    COMPONENT "Category Management" as CategoryMgmt
+    COMPONENT "Search & Filtering" as SearchEngine
+    COMPONENT "Inventory Management" as InventoryMgmt
+    COMPONENT "Price Management" as PriceMgmt
+  }
+  
+  RECTANGLE "🛒 Shopping Cart Service" as CartService {
+    COMPONENT "Cart Management" as CartMgmt
+    COMPONENT "Session Handling" as CartSession
+    COMPONENT "Price Calculation" as PriceCalc
+    COMPONENT "Discount Engine" as DiscountEngine
+  }
+  
+  RECTANGLE "📦 Order Management Service" as OrderService {
+    COMPONENT "Order Processing" as OrderProcessing
+    COMPONENT "Order State Machine" as OrderStateMachine
+    COMPONENT "Fulfillment Logic" as Fulfillment
+    COMPONENT "Return Management" as ReturnMgmt
+  }
+  
+  RECTANGLE "💳 Payment Service" as PaymentService {
+    COMPONENT "Payment Gateway Integration" as PaymentGateway
+    COMPONENT "Payment Processing" as PaymentProcessing
+    COMPONENT "Refund Management" as RefundMgmt
+    COMPONENT "PCI Compliance Layer" as PCICompliance
+  }
+  
+  RECTANGLE "📧 Notification Service" as NotificationService {
+    COMPONENT "Email Templates" as EmailTemplates
+    COMPONENT "SMS Notifications" as SMSNotif
+    COMPONENT "Push Notifications" as PushNotif
+    COMPONENT "Notification Queue" as NotifQueue
+  }
+  
+  RECTANGLE "⭐ Review & Rating Service" as ReviewService {
+    COMPONENT "Review Management" as ReviewMgmt
+    COMPONENT "Rating Calculation" as RatingCalc
+    COMPONENT "Content Moderation" as ContentMod
+  }
+  
+  RECTANGLE "🎯 Marketing Service" as MarketingService {
+    COMPONENT "Coupon Management" as CouponMgmt
+    COMPONENT "Campaign Management" as CampaignMgmt
+    COMPONENT "Newsletter Service" as NewsletterSvc
+    COMPONENT "Recommendation Engine" as RecommendationEngine
+  }
+  
+  RECTANGLE "📊 Analytics Service" as AnalyticsService {
+    COMPONENT "Event Tracking" as EventTracking
+    COMPONENT "Sales Analytics" as SalesAnalytics
+    COMPONENT "Customer Analytics" as CustomerAnalytics
+    COMPONENT "Report Generation" as ReportGen
+  }
+}
+
+' ===== DATA LAYER =====
+RECTANGLE "💾 Data Layer" as DataLayer {
+  
+  RECTANGLE "Primary Databases" as PrimaryDB {
+    DATABASE "PostgreSQL\n(Users, Products, Orders)" as PostgreSQL
+    DATABASE "Redis\n(Cache, Sessions, Cart)" as Redis
+    DATABASE "MongoDB\n(Analytics, Logs)" as MongoDB
+  }
+  
+  RECTANGLE "Search & Analytics" as SearchDB {
+    DATABASE "Elasticsearch\n(Product Search)" as Elasticsearch
+    DATABASE "InfluxDB\n(Time Series Metrics)" as InfluxDB
+  }
+}
+
+' ===== EXTERNAL SERVICES =====
+RECTANGLE "🔌 External Services" as ExternalServices {
+  
+  RECTANGLE "Payment Gateways" as PaymentGateways {
+    CLOUD "Stripe API" as Stripe
+    CLOUD "PayPal API" as PayPal
+    CLOUD "Square API" as Square
+  }
+  
+  RECTANGLE "Communication Services" as CommServices {
+    CLOUD "SendGrid\n(Email)" as SendGrid
+    CLOUD "Twilio\n(SMS)" as Twilio
+    CLOUD "Firebase\n(Push Notifications)" as Firebase
+  }
+  
+  RECTANGLE "Storage & CDN" as StorageServices {
+    CLOUD "AWS S3\n(File Storage)" as S3
+    CLOUD "CloudFront\n(Image CDN)" as CloudFront
+    CLOUD "ImageKit\n(Image Optimization)" as ImageKit
+  }
+  
+  RECTANGLE "Shipping & Logistics" as ShippingServices {
+    CLOUD "FedEx API" as FedEx
+    CLOUD "UPS API" as UPS
+    CLOUD "DHL API" as DHL
+    CLOUD "Local Courier APIs" as LocalCourier
+  }
+  
+  RECTANGLE "Social & Auth" as SocialServices {
+    CLOUD "Google OAuth" as GoogleOAuth
+    CLOUD "Facebook OAuth" as FacebookOAuth
+    CLOUD "Apple Sign-In" as AppleSignIn
+  }
+}
+
+' ===== INFRASTRUCTURE LAYER =====
+RECTANGLE "🛠️ Infrastructure Layer" as InfrastructureLayer {
+  
+  RECTANGLE "Message Queue System" as MessageQueue {
+    COMPONENT "RabbitMQ\n(Order Processing)" as RabbitMQ
+    COMPONENT "Apache Kafka\n(Event Streaming)" as Kafka
+    COMPONENT "Bull Queue\n(Job Processing)" as BullQueue
+  }
+  
+  RECTANGLE "Caching Strategy" as CacheStrategy {
+    COMPONENT "Application Cache\n(Node.js Memory)" as AppCache
+    COMPONENT "Distributed Cache\n(Redis Cluster)" as DistributedCache
+    COMPONENT "CDN Edge Cache" as EdgeCache
+  }
+  
+  RECTANGLE "File Processing" as FileProcessing {
+    COMPONENT "Image Resizing" as ImageResize
+    COMPONENT "PDF Generation" as PDFGen
+    COMPONENT "CSV Processing" as CSVProcessor
+    COMPONENT "Backup Service" as BackupSvc
+  }
+}
+
+' ===== MONITORING & SECURITY =====
+RECTANGLE "🔍 Monitoring & Security" as MonitoringSecurity {
+  
+  RECTANGLE "Security Layer" as SecurityLayer {
+    COMPONENT "WAF\n(Web Application Firewall)" as WAF
+    COMPONENT "Rate Limiting" as RateLimit
+    COMPONENT "Input Sanitization" as InputSanitization
+    COMPONENT "OWASP Security" as OWASPSecurity
+  }
+  
+  RECTANGLE "Monitoring & Observability" as MonitoringTools {
+    COMPONENT "Application Monitoring\n(New Relic/DataDog)" as APM
+    COMPONENT "Log Aggregation\n(ELK Stack)" as LogAggregation
+    COMPONENT "Error Tracking\n(Sentry)" as ErrorTracking
+    COMPONENT "Uptime Monitoring" as UptimeMonitoring
+  }
+  
+  RECTANGLE "DevOps & Deployment" as DevOps {
+    COMPONENT "CI/CD Pipeline\n(GitHub Actions)" as CICD
+    COMPONENT "Docker Containers" as Docker
+    COMPONENT "Kubernetes Orchestration" as Kubernetes
+    COMPONENT "Infrastructure as Code\n(Terraform)" as IaC
+  }
+}
+
+' ===== CONNECTIONS =====
+
+' Presentation to CDN
+WebApp --> CDN
+AdminDashboard --> CDN
+MobileApp --> CDN
+
+' CDN to Load Balancer
+CDN --> LoadBalancer
+LoadBalancer --> APIGateway
+
+' API Gateway to Services
+APIGateway --> AuthService
+APIGateway --> ProductService
+APIGateway --> CartService
+APIGateway --> OrderService
+APIGateway --> PaymentService
+APIGateway --> NotificationService
+APIGateway --> ReviewService
+APIGateway --> MarketingService
+APIGateway --> AnalyticsService
+
+' Service Interconnections
+OrderService --> PaymentService : "process payments"
+OrderService --> NotificationService : "send confirmations"
+OrderService --> InventoryMgmt : "update stock"
+CartService --> ProductService : "validate products"
+CartService --> MarketingService : "apply discounts"
+PaymentService --> NotificationService : "payment notifications"
+ReviewService --> NotificationService : "review notifications"
+
+' Services to Databases
+AuthService --> PostgreSQL
+AuthService --> Redis
+ProductService --> PostgreSQL
+ProductService --> Elasticsearch
+CartService --> Redis
+OrderService --> PostgreSQL
+PaymentService --> PostgreSQL
+AnalyticsService --> MongoDB
+AnalyticsService --> InfluxDB
+
+' External Service Connections
+PaymentService --> Stripe
+PaymentService --> PayPal
+PaymentService --> Square
+NotificationService --> SendGrid
+NotificationService --> Twilio
+NotificationService --> Firebase
+AuthService --> GoogleOAuth
+AuthService --> FacebookOAuth
+ProductService --> S3
+ProductService --> ImageKit
+
+' Infrastructure Connections
+OrderService --> RabbitMQ
+NotificationService --> RabbitMQ
+AnalyticsService --> Kafka
+ProductService --> EdgeCache
+CartService --> DistributedCache
+
+' Monitoring Connections
+APIGateway --> APM
+AuthService --> LogAggregation
+PaymentService --> ErrorTracking
+LoadBalancer --> UptimeMonitoring
+
+@enduml

@@ -1,0 +1,48 @@
+## Explicación del Diagrama de Clases
+
+## Arquitectura por Capas
+
+1. **Capa de Controladores**: Maneja las peticiones HTTP para la API REST
+2. **Capa de Servicios**: Contiene toda la lógica de negocio del e-commerce
+3. **Capa de Dominio**: Entidades y objetos de valor del sistema
+4. **Capa de Infraestructura**: Repositorios e integración con sistemas externos
+
+## Principios SOLID Aplicados
+
+- **S (Single Responsibility)**: Cada clase tiene una responsabilidad específica
+- **O (Open/Closed)**: Interfaces para extensibilidad de payment providers
+- **L (Liskov Substitution)**: Las clases derivadas pueden sustituir a sus clases base
+- **I (Interface Segregation)**: Interfaces específicas por dominio de responsabilidad
+- **D (Dependency Inversion)**: Servicios dependen de abstracciones, no implementaciones
+
+## Patrones de Diseño Implementados
+
+- **Repository Pattern**: Para acceso a datos de entidades
+- **Service Layer Pattern**: Para lógica de negocio compleja
+- **Factory Pattern**: Para creación de objetos de dominio
+- **Strategy Pattern**: Para múltiples payment providers
+- **Observer Pattern**: Para eventos del sistema (stock bajo, nuevas órdenes)
+- **Value Object Pattern**: Para Money y ProductDimensions
+
+## Características Específicas de E-commerce
+
+- **Gestión de inventario**: Control de stock en tiempo real
+- **Sistema de precios**: Precios regulares, comparativos y promocionales
+- **Carrito persistente**: Carritos que se mantienen entre sesiones
+- **Payment abstraction**: Soporte para múltiples gateways de pago
+- **Order lifecycle**: Estados completos desde creación hasta entrega
+- **Multi-variant products**: Productos con múltiples variantes
+
+## Aspectos de Seguridad
+
+- **Role-based permissions**: Control granular de acceso
+- **Password hashing**: Almacenamiento seguro de contraseñas
+- **Input validation**: Validación en múltiples capas
+- **Audit trail**: Registro de todas las operaciones críticas
+
+## Escalabilidad y Performance
+
+- **Caching strategy**: Objetos de valor inmutables
+- **Lazy loading**: Carga bajo demanda de relaciones
+- **Event-driven**: Procesamiento asíncrono de notificaciones
+- **Repository abstraction**: Facilita cambio de tecnologías de persistencia

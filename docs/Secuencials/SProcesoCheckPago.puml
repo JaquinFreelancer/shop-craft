@@ -1,0 +1,152 @@
+@startuml Sequence_Checkout_Payment
+
+actor "Cliente" as Customer
+participant "Frontend" as Frontend
+participant "API Gateway" as Gateway
+participant "Auth Service" as AuthSvc
+participant "Cart Service" as CartSvc
+participant "Order Service" as OrderSvc
+participant "Payment Service" as PaymentSvc
+participant "Inventory Service" as InventorySvc
+participant "Notification Service" as NotifSvc
+participant "Database" as DB
+participant "Stripe API" as Stripe
+participant "Email Service" as SendGrid
+
+title Proceso de Checkout y Pago - Flujo Completo
+
+Customer -> Frontend: Navegar a checkout
+Frontend -> Gateway: GET /cart/checkout
+Gateway -> CartSvc: Obtener carrito y calcular totales
+CartSvc -> DB: Query cart items + shipping + taxes
+DB -> CartSvc: Cart data completo
+CartSvc -> Gateway: Resumen del carrito
+Gateway -> Frontend: Datos para checkout
+Frontend -> Customer: Mostrar resumen de orden
+
+== Información de Envío ==
+
+Customer -> Frontend: Ingresar dirección de envío
+Frontend -> Frontend: Validar formato de dirección
+
+alt Usuario autenticado
+    Frontend -> Gateway: GET /users/addresses
+    Gateway -> AuthSvc: Verificar autenticación
+    Gateway -> Frontend: Direcciones guardadas del usuario
+    Frontend -> Customer: Opción de seleccionar dirección existente
+end
+
+Customer -> Frontend: Confirmar dirección de envío
+Frontend -> Gateway: POST /shipping/calculate
+Gateway -> CartSvc: Calcular métodos de envío disponibles
+CartSvc -> DB: Query shipping zones + rates
+DB -> CartSvc: Shipping options
+CartSvc -> Gateway: Métodos de envío + precios
+Gateway -> Frontend: Opciones de envío
+Frontend -> Customer: Seleccionar método de envío
+
+== Aplicar Descuentos ==
+
+opt Cliente tiene cupón
+    Customer -> Frontend: Ingresar código de cupón
+    Frontend -> Gateway: POST /coupons/validate
+    Gateway -> CartSvc: Validar cupón
+    CartSvc -> DB: Query coupon + usage rules
+    DB -> CartSvc: Coupon validity
+    
+    alt Cupón válido
+        CartSvc -> CartSvc: Calcular descuento
+        CartSvc -> Gateway: Descuento aplicado
+        Gateway -> Frontend: Totales actualizados
+        Frontend -> Customer: Mostrar descuento aplicado
+    else Cupón inválido
+        CartSvc -> Gateway: Cupón inválido/expirado
+        Gateway -> Frontend: Error de cupón
+        Frontend -> Customer: Mostrar error específico
+    end
+end
+
+== Procesamiento de Pago ==
+
+Customer -> Frontend: Seleccionar método de pago + datos
+Frontend -> Frontend: Validar información de pago (frontend)
+
+alt Pago con Stripe
+    Frontend -> Gateway: POST /orders/create
+    Gateway -> OrderSvc: Crear orden pendiente
+    OrderSvc -> InventorySvc: Reservar inventario
+    InventorySvc -> DB: BEGIN transaction
+    InventorySvc -> DB: UPDATE products SET reserved_stock = reserved_stock + quantity
+    InventorySvc -> DB: COMMIT transaction
+    InventorySvc -> OrderSvc: Inventario reservado
+    
+    OrderSvc -> DB: INSERT order (status = 'pending_payment')
+    OrderSvc -> DB: INSERT order_items
+    OrderSvc -> Gateway: Orden creada + order_id
+    
+    Gateway -> PaymentSvc: Procesar pago
+    PaymentSvc -> Stripe: Create payment intent
+    Stripe -> PaymentSvc: Payment intent + client_secret
+    PaymentSvc -> Gateway: Client secret
+    Gateway -> Frontend: Payment intent data
+    
+    Frontend -> Stripe: Confirm payment (client-side)
+    Stripe -> Frontend: Payment result
+    
+    alt Pago exitoso
+        Frontend -> Gateway: POST /payments/confirm
+        Gateway -> PaymentSvc: Confirmar pago
+        PaymentSvc -> Stripe: Retrieve payment status
+        Stripe -> PaymentSvc: Payment confirmed
+        
+        PaymentSvc -> DB: INSERT payment (status = 'completed')
+        PaymentSvc -> OrderSvc: Pago confirmado
+        OrderSvc -> DB: UPDATE order SET status = 'confirmed', payment_status = 'paid'
+        
+        OrderSvc -> InventorySvc: Confirmar reducción de stock
+        InventorySvc -> DB: UPDATE products SET stock = stock - quantity, reserved_stock = reserved_stock - quantity
+        
+        OrderSvc -> CartSvc: Limpiar carrito
+        CartSvc -> DB: DELETE FROM cart_items WHERE cart_id = ?
+        CartSvc -> DB: UPDATE carts SET total_items = 0, total_amount = 0
+        
+        OrderSvc -> NotifSvc: Enviar confirmación de orden
+        NotifSvc -> SendGrid: Send order confirmation email
+        SendGrid -> Customer: Email confirmación
+        
+        OrderSvc -> Gateway: Orden confirmada
+        Gateway -> Frontend: 201 Order created
+        Frontend -> Customer: Redirigir a página de éxito
+        
+    else Pago fallido
+        Frontend -> Gateway: POST /payments/failed
+        Gateway -> PaymentSvc: Marcar pago como fallido
+        PaymentSvc -> DB: INSERT payment (status = 'failed')
+        PaymentSvc -> OrderSvc: Pago fallido
+        
+        OrderSvc -> InventorySvc: Liberar inventario reservado
+        InventorySvc -> DB: UPDATE products SET reserved_stock = reserved_stock - quantity
+        
+        OrderSvc -> DB: UPDATE order SET status = 'cancelled', payment_status = 'failed'
+        OrderSvc -> Gateway: Pago fallido
+        Gateway -> Frontend: 400 Payment failed
+        Frontend -> Customer: Mostrar error + opciones de reintento
+    end
+
+else Pago con PayPal
+    Frontend -> Gateway: POST /orders/create (paypal)
+    Gateway -> PaymentSvc: Crear orden PayPal
+    PaymentSvc -> PaymentSvc: PayPal SDK create order
+    PaymentSvc -> Gateway: PayPal order URL
+    Gateway -> Frontend: Redirect URL
+    Frontend -> Customer: Redirigir a PayPal
+    
+    Customer -> PaymentSvc: PayPal callback (approval)
+    PaymentSvc -> PaymentSvc: Capture PayPal payment
+    PaymentSvc -> OrderSvc: Pago confirmado
+    note right: Continúa el mismo flujo de confirmación
+end
+
+note over Customer, SendGrid: Orden procesada exitosamente\nInventario actualizado\nEmail de confirmación enviado
+
+@enduml

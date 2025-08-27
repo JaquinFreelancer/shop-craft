@@ -1,0 +1,122 @@
+@startuml Sequence_Product_Management
+
+actor "Administrador" as Admin
+participant "Admin Dashboard" as AdminUI
+participant "API Gateway" as Gateway
+participant "Auth Service" as AuthSvc
+participant "Product Service" as ProductSvc
+participant "Category Service" as CategorySvc
+participant "Image Service" as ImageSvc
+participant "Search Service" as SearchSvc
+participant "Database" as DB
+participant "Cache" as Redis
+participant "File Storage" as S3
+participant "CDN" as CloudFront
+
+title Gestión de Productos - Crear Producto
+
+Admin -> AdminUI: Acceder a "Crear Producto"
+AdminUI -> Gateway: GET /admin/products/create
+Gateway -> AuthSvc: Verificar permisos admin
+AuthSvc -> DB: Query user roles + permissions
+DB -> AuthSvc: Admin permissions confirmed
+AuthSvc -> Gateway: Acceso autorizado
+
+Gateway -> CategorySvc: GET /categories (for dropdown)
+CategorySvc -> Redis: Check categories cache
+alt Cache hit
+    Redis -> CategorySvc: Cached categories
+else Cache miss
+    CategorySvc -> DB: SELECT categories ORDER BY parent_id, sort_order
+    DB -> CategorySvc: Categories tree
+    CategorySvc -> Redis: Cache categories (TTL: 30m)
+end
+CategorySvc -> Gateway: Categories list
+Gateway -> AdminUI: Form data + categories
+AdminUI -> Admin: Mostrar formulario de creación
+
+== Completar Información del Producto ==
+
+Admin -> AdminUI: Completar formulario del producto
+AdminUI -> AdminUI: Validación en tiempo real (nombre, SKU, precio)
+
+== Subir Imágenes ==
+
+Admin -> AdminUI: Seleccionar imágenes del producto
+AdminUI -> Gateway: POST /files/upload (multipart/form-data)
+Gateway -> ImageSvc: Procesar upload de imágenes
+
+loop Para cada imagen
+    ImageSvc -> ImageSvc: Validar tipo y tamaño de archivo
+    ImageSvc -> ImageSvc: Redimensionar imagen (multiple sizes)
+    ImageSvc -> S3: Upload original + thumbnails
+    S3 -> ImageSvc: File URLs
+    ImageSvc -> DB: INSERT product_images_temp (session_id, url, thumbnails)
+end
+
+ImageSvc -> Gateway: Imágenes subidas exitosamente
+Gateway -> AdminUI: URLs de imágenes + previews
+AdminUI -> Admin: Mostrar previews + opción reordenar
+
+== Configurar Variantes (Opcional) ==
+
+opt Producto con variantes
+    Admin -> AdminUI: Agregar opciones de variante (talla, color)
+    AdminUI -> AdminUI: Generar combinaciones automáticamente
+    Admin -> AdminUI: Configurar precio/stock por variante
+end
+
+== Crear Producto ==
+
+Admin -> AdminUI: Clic "Guardar Producto"
+AdminUI -> Gateway: POST /admin/products
+Gateway -> AuthSvc: Verificar permisos de creación
+AuthSvc -> Gateway: Permisos confirmados
+
+Gateway -> ProductSvc: Crear producto
+ProductSvc -> ProductSvc: Validar datos del producto
+ProductSvc -> ProductSvc: Generar slug único
+
+alt SKU duplicado
+    ProductSvc -> DB: CHECK SKU uniqueness
+    ProductSvc -> ProductSvc: Auto-generar SKU alternativo
+end
+
+ProductSvc -> DB: BEGIN transaction
+ProductSvc -> DB: INSERT products (status = 'draft')
+ProductSvc -> DB: INSERT product_variants (if applicable)
+
+ProductSvc -> ImageSvc: Asociar imágenes temporales al producto
+ImageSvc -> DB: UPDATE product_images_temp SET product_id = ?
+ImageSvc -> DB: INSERT INTO product_images SELECT * FROM product_images_temp
+ImageSvc -> DB: DELETE FROM product_images_temp WHERE session_id = ?
+
+ProductSvc -> DB: COMMIT transaction
+
+ProductSvc -> Redis: Invalidar cache relacionado
+ProductSvc -> SearchSvc: Indexar producto para búsqueda
+SearchSvc -> SearchSvc: Create/update Elasticsearch document
+
+ProductSvc -> CloudFront: Invalidar cache de CDN (imágenes)
+
+ProductSvc -> Gateway: Producto creado exitosamente
+Gateway -> AdminUI: 201 Created + product data
+AdminUI -> Admin: Mostrar éxito + opciones (publicar, editar, ver)
+
+== Publicar Producto ==
+
+opt Admin decide publicar inmediatamente
+    Admin -> AdminUI: Clic "Publicar Producto"
+    AdminUI -> Gateway: PUT /admin/products/{id}/publish
+    Gateway -> ProductSvc: Actualizar estado a 'active'
+    ProductSvc -> DB: UPDATE products SET status = 'active'
+    ProductSvc -> Redis: Actualizar cache
+    ProductSvc -> SearchSvc: Actualizar índice
+    ProductSvc -> Gateway: Producto publicado
+    Gateway -> AdminUI: Confirmación
+    AdminUI -> Admin: "Producto ahora visible en tienda"
+end
+
+note over Admin, CloudFront: Producto creado exitosamente\nImágenes optimizadas y en CDN\nIndexado para búsqueda\nListo para publicación
+
+@enduml
